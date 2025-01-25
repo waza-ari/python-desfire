@@ -1,0 +1,9 @@
+version: '3'
+
+dotenv: ['.env', '{{.ENV}}/.env.', '{{.HOME}}/.env']
+
+tasks:
+  lint:
+    cmds:
+      - poetry run ruff check src --fix
+      - poetry run ruff format src

@@ -2,16 +2,14 @@
 
 
 import sys
+
 import crcmod.predefined
 
 if sys.version_info[0] == 2 and sys.version_info[1] == 1:
     from Crypto.Util.py21compat import *
-from Crypto.Util.py3compat import *
-import json
-from binascii import unhexlify
 
-from Crypto.Util.strxor import strxor
-from Crypto.Util.number import long_to_bytes, bytes_to_long
+from Crypto.Util.number import bytes_to_long, long_to_bytes
+from Crypto.Util.py3compat import *
 
 
 def byte_array_to_human_readable_hex(bytes):
@@ -36,7 +34,7 @@ def getList(data,byteSize=2,byteorder='big'):
     elif isinstance(data,bytes):
         return list(data)
     return data
-     
+
 
 def getBytes(data,byteSize=2):
     if isinstance(data, str):

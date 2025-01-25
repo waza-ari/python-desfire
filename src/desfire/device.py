@@ -1,4 +1,4 @@
-class Device(object):
+class Device:
     """Abstract base class which uses underlying device communication channel."""
 
     def transceive(self, bytes):

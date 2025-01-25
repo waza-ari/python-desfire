@@ -1,7 +1,6 @@
-from smartcard.pcsc.PCSCCardConnection import translateprotocolheader
-from smartcard.scard import SCardTransmit
-from smartcard.scard import SCardGetErrorMessage
 from smartcard.Exceptions import CardConnectionException
+from smartcard.pcsc.PCSCCardConnection import translateprotocolheader
+from smartcard.scard import SCardGetErrorMessage, SCardTransmit
 
 from .device import Device
 
@@ -22,7 +21,7 @@ class PCSCDevice(Device):
     def transceive(self, bytes):
 
         if not self.card_connection.hcard:
-            raise PCSCNotConnected("Tried to transit to non-open connection: {}".format(self.card_connection))
+            raise PCSCNotConnected(f"Tried to transit to non-open connection: {self.card_connection}")
 
         protocol = self.card_connection.getProtocol()
         pcscprotocolheader = translateprotocolheader(protocol)
@@ -42,7 +41,7 @@ class DummyPCSCDevice(Device):
         :card_connection: :py:class:`smartcard.pcsc.PCSCCardConnection.PCSCCardConnection` instance. Call ``card_connection.connect()`` before calling any DESFire APIs.
         """
         self.response={}
-    
+
     def addResponse(self,send,resp):
         toadd=[0]
         toadd+=[bytearray.fromhex(a) for a in resp]
