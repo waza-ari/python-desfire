@@ -120,17 +120,17 @@ class DESFire_File_Type(Enum):
 
 class DESFireCmac(Enum):
     MAC_None = (0,)
+
     # Transmit data:
-    MAC_Tmac = (
-        1,
-    )  # The CMAC must be calculated for the TX data sent to the card although this Tx CMAC is not transmitted
-    MAC_Tcrypt = (
-        2,
-    )  # To the parameters sent to the card a CRC32 must be appended and then they must be encrypted with the session key
+    # The CMAC must be calculated for the TX data sent to the card although this Tx CMAC is not transmitted
+    MAC_Tmac = (1,)
+    # To the parameters sent to the card a CRC32 must be appended and then they must be encrypted with the session key
+    MAC_Tcrypt = (2,)
+
     # Receive data:
-    MAC_Rmac = (
-        4,
-    )  # The CMAC must be calculated for the RX data received from the card. If status == ST_Success -> verify the CMAC in the response
+    # The CMAC must be calculated for the RX data received from the card. If status == ST_Success
+    # -> verify the CMAC in the response
+    MAC_Rmac = (4,)
     MAC_Rcrypt = (8,)  # The data received from the card must be decrypted with the session key
 
 
@@ -204,7 +204,7 @@ class DESFireKeySet:
 class DESFireFileEncryption(Enum):
     CM_PLAIN = 0x00
     CM_MAC = 0x01  # not implemented (Plain data transfer with additional MAC)
-    CM_ENCRYPT = 0x03  # not implemented (Does not make data stored on the card more secure. Only encrypts the transfer between Teensy and the card)
+    CM_ENCRYPT = 0x03  # not implemented (Does not make data stored on the card more secure. Only encrypts the transfer)
 
 
 class DESFireKey:
@@ -234,12 +234,12 @@ class DESFireKey:
 
     def CiperInit(self):
         if self.keySize == 0:
-            if self.keyBytes == None:
+            if self.keyBytes is None:
                 self.keySize = 8
             else:
                 self.keySize = len(self.keyBytes)
         self.setDefaultKeyNotSet()
-        if self.CipherBlocksize == None:
+        if self.CipherBlocksize is None:
             self.CipherBlocksize = self.keySize
         # todo assert on key length!
         if self.keyType == DESFireKeyType.DF_KEY_AES:
@@ -278,7 +278,7 @@ class DESFireKey:
             raise Exception("Unknown key type!")
 
     def setDefaultKeyNotSet(self):
-        if self.keyBytes == None:
+        if self.keyBytes is None:
             self.keyBytes = b"\00" * self.keySize
 
     def GetKeyType(self):
@@ -375,9 +375,7 @@ class CMAC:
         elif ciphermod.block_size == 16:
             const_Rb = 0x87
         else:
-            raise TypeError(
-                "CMAC requires a cipher with a block size of 8 or 16 bytes, not %d" % (ciphermod.block_size,)
-            )
+            raise TypeError(f"CMAC requires a cipher with a block size of 8 or 16 bytes, not {ciphermod.block_size}")
         self.digest_size = ciphermod.block_size
 
         # Compute sub-keys
@@ -439,21 +437,12 @@ class DESFireCardVersion:
 
     def __repr__(self):
         temp = "--- Desfire Card Details ---\r\n"
-        temp += "Hardware Version: %d.%d\r\n" % (
-            self.hardwareMajVersion,
-            self.hardwareMinVersion,
-        )
-        temp += "Software Version: %d.%d\r\n" % (
-            self.softwareMajVersion,
-            self.softwareMinVersion,
-        )
-        temp += "EEPROM size:      %d bytes\r\n" % (1 << (self.hardwareStorageSize - 1))
-        temp += "Production :       week %X, year 20%02X\r\n" % (
-            self.cwProd,
-            self.yearProd,
-        )
-        temp += "UID no  : %s\r\n" % (byte_array_to_human_readable_hex(self.UID),)
-        temp += "Batch no: %s\r\n" % (byte_array_to_human_readable_hex(self.batchNo),)
+        temp += f"Hardware Version: {self.hardwareMajVersion}.{self.hardwareMinVersion}\r\n"
+        temp += f"Software Version: {self.softwareMajVersion}.{self.softwareMinVersion}\r\n"
+        temp += f"EEPROM size:      {1 << (self.hardwareStorageSize - 1)} bytes\r\n"
+        temp += f"Production :       week {self.cwProd:X}, year 20{self.yearProd:02X}\r\n"
+        temp += f"UID no  : {byte_array_to_human_readable_hex(self.UID)}\r\n"
+        temp += f"Batch no: {byte_array_to_human_readable_hex(self.batchNo)}\r\n"
         return temp
 
     def toDict(self):
@@ -488,7 +477,7 @@ class DESFireFilePermissions:
         self.ChangeAccess = None
 
     def pack(self):
-        # return (self.ReadAccess << 12) | (self.WriteAccess <<  8) | (self.ReadAndWriteAccess <<  4) | self.ChangeAccess;
+        # return (self.ReadAccess << 12) | (self.WriteAccess <<  8) | (self.ReadAndWriteAccess <<  4) | self.ChangeAccess;  # noqa: E501
         return (self.ReadAccess << 4) | (self.WriteAccess) | (self.ReadAndWriteAccess << 12) | (self.ChangeAccess << 8)
 
     def unpack(self, data):

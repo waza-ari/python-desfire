@@ -13,49 +13,28 @@ from desfire.DESFire_DEF import (
     DESFire_STATUS,
     calc_key_settings,
 )
-from desfire.exceptions import DESFireAuthException
+from desfire.exceptions import DESFireAuthException, DESFireCommunicationError
+from desfire.pcsc import PCSCDevice
 
 from .util import CRC32, byte_array_to_human_readable_hex, getInt, getList
 
-_logger = logging.getLogger(__name__)
-
-
-class DESFireCommunicationError(Exception):
-    """Outgoing DESFire command received a non-OK reply.
-    The exception message is human readable translation of the error code if available.
-    The ``status_code`` carries the original status word error byte.
-    """
-
-    def __init__(self, msg, status_code):
-        super().__init__(msg)
-        self.status_code = status_code
-
 
 class DESFire:
-    def __init__(self, device, logger=None):
+    def __init__(self, device: PCSCDevice, logger: logging.Logger | None = None):
         self.isAuthenticated = False
         self.sessionKey = None
         self.cmac = None
         self.MaxFrameSize = 60
-        """
-        :param device: :py:class:`desfire.device.Device` implementation
-        :param logger: Python :py:class:`logging.Logger` used for logging output.
-        Overrides the default logger. Extensively uses ``INFO`` logging level.
-        """
-
-        # assert isinstance(device, Device), "Not a compatible device instance: {}".format(device)
 
         self.device = device
 
-        #: 8 bytes of session key after authenticate()
-        self.session_key = None
         self.lastSelectedApplication = None
         if logger:
             self.logger = logger
         else:
-            self.logger = _logger
+            self.logger = logging.getLogger(__name__)
 
-    def decrypt_response(self, response, private_key=b"\00" * 16, session_key=None):
+    def decrypt_response(self, response, private_key=b"\00" * 16):
         """Decrypt the autheticated session answer from the card.
         .. warn ::
             Does not check CMAC.
@@ -70,32 +49,35 @@ class DESFire:
             padmode=pyDes.PAD_NORMAL,
         )
 
-        decrypted = [b for b in (k.decrypt(bytes(response)))]
+        decrypted = list(k.decrypt(bytes(response)))  # ??
         import pdb
 
         pdb.set_trace()
 
-    def authenticate(self, key_id, key, challenge=None):
-        """Does authentication to the currently selected application with keyid (key_id)
-        Authentication is NEVER needed to call this function.
-        Args:
-                key_id  (int)         : Key number
-                key (DESFireKey)      : The key used for authentication
-                challenge (DESFireKey): The challenge supplied by the reader to the card on the challenge-response authentication.
-                                                                It will determine half of the session Key bytes (optional)
-                                                                It's there for testing and crypto thiunkering purposes
-
-        Returns:
-                DESFireKey : the session key used for future communications with the card in the same session
+    def authenticate(self, key_id: int, key: DESFireKey, challenge: str | None = None):
         """
+        Authenticate against the currently selected application with key_id.
+        Authentication is NEVER needed to call this function.
+
+        :param key_id: Key number
+        :type key_id: int
+        :param key: The key used for authentication
+        :type key: DESFireKey
+        :param challenge: The challenge supplied by the reader to the card on the challenge-response authentication.
+                            It will determine half of the session Key bytes (optional)
+        :type challenge: str | None
+        """
+
         self.logger.debug("Authenticating")
         self.isAuthenticated = False
         cmd = None
         keyType = key.GetKeyType()
         if keyType == DESFireKeyType.DF_KEY_AES:
+            self.logger.debug("Authenticating with AES key")
             cmd = DESFireCommand.DFEV1_INS_AUTHENTICATE_AES.value
             params = [key_id]
         elif keyType == DESFireKeyType.DF_KEY_2K3DES or keyType == DESFireKeyType.DF_KEY_3K3DES:
+            self.logger.debug("Authenticating with 3DES key")
             cmd = DESFireCommand.DFEV1_INS_AUTHENTICATE_ISO.value
             params = [key_id]
         else:
@@ -255,16 +237,16 @@ class DESFire:
         withTXCMAC: bool indicates if CMAC should be calculated
         autorecieve: bool indicates if the receptions should implement paging in case there is more deata to be sent by the card back then the max message size
         """
-        result = []
 
         # sanity check
         if withTXCMAC or isEncryptedComm:
             if not self.isAuthenticated:
-                raise Exception("Cant perform CMAC calc without authantication!")
+                raise Exception("Cant perform CMAC calc without authentication!")
 
         # encrypt the communication
         if isEncryptedComm:
             apdu_cmd = self.sessionKey.EncryptMsg(apdu_cmd, withCRC, encryptBegin)
+
         # communication with the card is not encrypted, but CMAC might need to be calculated
         # calculate cmac for outgoing message
         if withTXCMAC:
@@ -273,10 +255,15 @@ class DESFire:
         response = self._communicate(apdu_cmd, description, nativ, allow_continue_fallthrough)
 
         if self.isAuthenticated and len(response) >= 8 and withRXCMAC:
-            # after authentication, there is always an 8 bytes long CMAC coming from the card, to ensure message integrity
+            # after authentication, there is always an 8 bytes long CMAC coming from the card,
+            # to ensure message integrity
             # todo: verify CMAC
             if len(response) == 8:
-                # if self.sessionKey.keyType == DESFireKeyType.DF_KEY_3DES or self.sessionKey.keyType == DESFireKeyType.DF_KEY_2K3DES or self.sessionKey.keyType == DESFireKeyType.DF_KEY_3K3DES:
+                # if (
+                #     self.sessionKey.keyType == DESFireKeyType.DF_KEY_3DES
+                #     or self.sessionKey.keyType == DESFireKeyType.DF_KEY_2K3DES
+                #     or self.sessionKey.keyType == DESFireKeyType.DF_KEY_3K3DES
+                # ):
                 RXCMAC = response
                 response = []
                 # else:
@@ -286,8 +273,6 @@ class DESFire:
                 RXCMAC = response[-8:]
                 response = response[:-8]
 
-            # if response == "":
-            #    response = []
             cmacdata = response + [0x00]
             RXCMAC_CALC = self.sessionKey.CalculateCmac(cmacdata)
             self.logger.debug("RXCMAC      : " + byte_array_to_human_readable_hex(RXCMAC))
@@ -328,7 +313,6 @@ class DESFire:
                 list: A list of application IDs, in a 4 byte hex form
         """
         self.logger.debug("GetApplicationIDs")
-        appids = []
         cmd = DESFireCommand.DF_INS_GET_APPLICATION_IDS.value
         raw_data = self.communicate([cmd], "Get Application IDs", nativ=True, withTXCMAC=self.isAuthenticated)
 
@@ -358,7 +342,8 @@ class DESFire:
         """Gets card version info blob
         Version info contains the UID, Batch number, production week, production year, .... of the card
         Authentication is NOT needed to call this function
-        BEWARE: DESFire card has a security feature called "Random UID" which means that without authentication it will give you a random UID each time you call this function!
+        BEWARE: DESFire card has a security feature called "Random UID" which means that without authentication it will
+            give you a random UID each time you call this function!
         Args:
                 None
         Returns:
@@ -370,7 +355,8 @@ class DESFire:
         return DESFireCardVersion(raw_data)
 
     def formatCard(self):
-        """Formats the card
+        """
+        Formats the card
         WARNING! THIS COMPLETELY WIPES THE CARD AND RESETS IF TO A BLANK CARD!!
         Authentication is needed to call this function
         Args:
@@ -393,7 +379,7 @@ class DESFire:
             None
         """
         appid = getList(appid, 3, "big")
-        self.logger.debug("Selecting application with AppID %s" % (byte_array_to_human_readable_hex(appid),))
+        self.logger.debug(f"Selecting application with AppID {byte_array_to_human_readable_hex(appid)}")
 
         parameters = [appid[2], appid[1], appid[0]]
 
@@ -404,18 +390,25 @@ class DESFire:
         self.lastSelectedApplication = appid
 
     def createApplication(self, appid, keysettings, keycount, type):
-        """Creates application on the card with the specified settings
-        Authentication is ALWAYS needed to call this function.
-        Args:
-            appid (int)       : The application ID of the app to be created
-            keysettings (list): Key settings to be applied to the application to be created. MUST contain entryes derived from the DESFireKeySettings enum
-            keycount (int)    :
-            type (int)        : Key type that will specify the encryption used for authenticating to this application and communication with it. MUST be coming from the DESFireKeyType enum
-        Returns:
-            None
         """
+        Creates application on the card with the specified settings
+        Authentication is ALWAYS needed before calling this function.
+
+
+        :param appid: The application ID of the app to be created
+        :type appid:
+        :param keysettings: Key settings to be applied to the application to be created.
+            MUST contain entryes derived from the DESFireKeySettings enum
+        :type keysettings:
+        :param keycount:
+        :type keycount:
+        :param type: Key type that will specify the encryption used for authenticating to this application and
+            communication with it.MUST be coming from the DESFireKeyType enum
+        :type type:
+        """
+
         appid = getList(appid, 3, "big")
-        self.logger.debug("Creating application with appid: %s, " % (byte_array_to_human_readable_hex(appid)))
+        self.logger.debug(f"Creating application with appid: {byte_array_to_human_readable_hex(appid)}, ")
         appid = [appid[2], appid[1], appid[0]]
         keycount = getInt(keycount, "big")
         params = appid + [calc_key_settings(keysettings)] + [keycount | type.value]
@@ -450,7 +443,7 @@ class DESFire:
         )
 
     ###################################################################################################################
-    ### This Function is not refecored
+    ### This Function is not refactored
     ###################################################################################################################
 
     ###### FILE FUNTCIONS
@@ -474,7 +467,7 @@ class DESFire:
             for byte in raw_data:
                 fileIDs.append(byte)
             self.logger.debug(
-                "File ids: %s" % ("".join([byte_array_to_human_readable_hex(bytearray([id])) for id in fileIDs]),)
+                f"File ids: {''.join([byte_array_to_human_readable_hex(bytearray([id])) for id in fileIDs])}"
             )
         return fileIDs
 
@@ -488,7 +481,7 @@ class DESFire:
             DESFireFileSettings: An object describing all settings for the file
         """
         fileid = getList(fileid, 1, "big")
-        self.logger.debug("Getting file settings for file %s" % (byte_array_to_human_readable_hex(fileid),))
+        self.logger.debug(f"Getting file settings for file {byte_array_to_human_readable_hex(fileid)}")
 
         cmd = DESFireCommand.DF_INS_GET_FILE_SETTINGS.value
         raw_data = raw_data = self.communicate(
@@ -581,14 +574,16 @@ class DESFire:
     ###### CRYPTO KEYS RELATED FUNCTIONS
 
     def getKeyVersion(self, keyNo):
-        """Gets the key version for the key identified by keyno. (SelectApplication needs to be called first, otherwise it's getting the settings for the Master Key)
+        """
+        Gets the key version for the key identified by keyno. (SelectApplication needs to be called first,
+        otherwise it's getting the settings for the Master Key)
         Authentication is ALWAYS needed to call this function.
         Args:
             keyNo (int) : The key number
         Returns:
             str: key version byte
         """
-        self.logger.debug("Getting key version for keyid %x" % (keyNo,))
+        self.logger.debug(f"Getting key version for keyid {keyNo:x}")
 
         params = getList(keyNo, 1, "big")
         cmd = DESFireCommand.DF_INS_GET_KEY_VERSION.value
