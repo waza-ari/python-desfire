@@ -1,0 +1,29 @@
+{
+    "[python]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.codeActionsOnSave": {
+            "source.fixAll": "explicit",
+            "source.organizeImports": "explicit"
+        }
+    },
+    "editor.formatOnSave": true,
+    "ruff.fixAll": true,
+    "ruff.organizeImports": true,
+    "files.exclude": {
+        "**/*.pyc": {
+            "when": "$(basename).py"
+        },
+        "**/__pycache__": true,
+        "**/.pytest_cache": true,
+        "**/.idea": true,
+        "**/.ruff_cache": true
+    },
+    "autoDocstring.docstringFormat": "google",
+    "python.analysis.autoFormatStrings": true,
+    "python.testing.pytestArgs": [
+        "src"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+}

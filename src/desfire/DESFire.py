@@ -1,21 +1,33 @@
-
 import logging
+from random import Random
 
 import pyDes
+from Crypto.Util.strxor import strxor
 
-from .DESFire_DEF import *
-from .util import byte_array_to_human_readable_hex
+from desfire.DESFire_DEF import (
+    DESFireCardVersion,
+    DESFireCommand,
+    DESFireFileSettings,
+    DESFireKey,
+    DESFireKeyType,
+    DESFire_STATUS,
+    calc_key_settings,
+)
+from desfire.exceptions import DESFireAuthException
+
+from .util import CRC32, byte_array_to_human_readable_hex, getInt, getList
 
 _logger = logging.getLogger(__name__)
 
 
 class DESFireCommunicationError(Exception):
     """Outgoing DESFire command received a non-OK reply.
-    The exception message is human readable translation of the error code if available. The ``status_code`` carries the original status word error byte.
+    The exception message is human readable translation of the error code if available.
+    The ``status_code`` carries the original status word error byte.
     """
 
     def __init__(self, msg, status_code):
-        super(DESFireCommunicationError, self).__init__(msg)
+        super().__init__(msg)
         self.status_code = status_code
 
 
@@ -27,7 +39,8 @@ class DESFire:
         self.MaxFrameSize = 60
         """
         :param device: :py:class:`desfire.device.Device` implementation
-        :param logger: Python :py:class:`logging.Logger` used for logging output. Overrides the default logger. Extensively uses ``INFO`` logging level.
+        :param logger: Python :py:class:`logging.Logger` used for logging output.
+        Overrides the default logger. Extensively uses ``INFO`` logging level.
         """
 
         # assert isinstance(device, Device), "Not a compatible device instance: {}".format(device)
@@ -75,7 +88,6 @@ class DESFire:
         Returns:
                 DESFireKey : the session key used for future communications with the card in the same session
         """
-        sessionKey = None
         self.logger.debug("Authenticating")
         self.isAuthenticated = False
         cmd = None
@@ -83,10 +95,7 @@ class DESFire:
         if keyType == DESFireKeyType.DF_KEY_AES:
             cmd = DESFireCommand.DFEV1_INS_AUTHENTICATE_AES.value
             params = [key_id]
-        elif (
-            keyType == DESFireKeyType.DF_KEY_2K3DES
-            or keyType == DESFireKeyType.DF_KEY_3K3DES
-        ):
+        elif keyType == DESFireKeyType.DF_KEY_2K3DES or keyType == DESFireKeyType.DF_KEY_3K3DES:
             cmd = DESFireCommand.DFEV1_INS_AUTHENTICATE_ISO.value
             params = [key_id]
         else:
@@ -99,27 +108,21 @@ class DESFire:
             allow_continue_fallthrough=True,
         )
         RndB_enc = raw_data
-        self.logger.debug(
-            "Random B (enc):" + byte_array_to_human_readable_hex(RndB_enc)
-        )
-        if (
-            keyType == DESFireKeyType.DF_KEY_3K3DES
-            or keyType == DESFireKeyType.DF_KEY_AES
-        ):
+        self.logger.debug("Random B (enc):" + byte_array_to_human_readable_hex(RndB_enc))
+        if keyType == DESFireKeyType.DF_KEY_3K3DES or keyType == DESFireKeyType.DF_KEY_AES:
             if len(RndB_enc) != 16:
                 raise DESFireAuthException(
-                    "Card expects a different key type. (enc B size is less than the blocksize of the key you specified)"
+                    "Card expects a different key type. "
+                    "(enc B size is less than the blocksize of the key you specified)"
                 )
 
         key.CiperInit()
         RndB = key.Decrypt(RndB_enc)
         self.logger.debug("Random B (dec): " + byte_array_to_human_readable_hex(RndB))
         RndB_rot = RndB[1:] + [RndB[0]]
-        self.logger.debug(
-            "Random B (dec, rot): " + byte_array_to_human_readable_hex(RndB_rot)
-        )
+        self.logger.debug("Random B (dec, rot): " + byte_array_to_human_readable_hex(RndB_rot))
 
-        if challenge != None:
+        if challenge is not None:
             RndA = bytes(bytearray.fromhex(challenge))
         else:
             RndA = Random.get_random_bytes(len(RndB))
@@ -127,9 +130,7 @@ class DESFire:
         RndAB = list(RndA) + RndB_rot
         self.logger.debug("Random AB: " + byte_array_to_human_readable_hex(RndAB))
         RndAB_enc = key.Encrypt(RndAB)
-        self.logger.debug(
-            "Random AB (enc): " + byte_array_to_human_readable_hex(RndAB_enc)
-        )
+        self.logger.debug("Random AB (enc): " + byte_array_to_human_readable_hex(RndAB_enc))
 
         params = RndAB_enc
         cmd = DESFireCommand.DF_INS_ADDITIONAL_FRAME.value
@@ -141,17 +142,11 @@ class DESFire:
         )
         # raw_data = hexstr2bytelist('91 3C 6D ED 84 22 1C 41')
         RndA_enc = raw_data
-        self.logger.debug(
-            "Random A (enc): " + byte_array_to_human_readable_hex(RndA_enc)
-        )
+        self.logger.debug("Random A (enc): " + byte_array_to_human_readable_hex(RndA_enc))
         RndA_dec = key.Decrypt(RndA_enc)
-        self.logger.debug(
-            "Random A (dec): " + byte_array_to_human_readable_hex(RndA_dec)
-        )
+        self.logger.debug("Random A (dec): " + byte_array_to_human_readable_hex(RndA_dec))
         RndA_dec_rot = RndA_dec[-1:] + RndA_dec[0:-1]
-        self.logger.debug(
-            "Random A (dec, rot): " + byte_array_to_human_readable_hex(RndA_dec_rot)
-        )
+        self.logger.debug("Random A (dec, rot): " + byte_array_to_human_readable_hex(RndA_dec_rot))
 
         if bytes(RndA) != bytes(RndA_dec_rot):
             raise Exception("Authentication FAILED!")
@@ -178,19 +173,14 @@ class DESFire:
                 sessionKeyBytes += RndA[12:16]
                 sessionKeyBytes += RndB[12:16]
 
-        if (
-            keyType == DESFireKeyType.DF_KEY_2K3DES
-            or keyType == DESFireKeyType.DF_KEY_3K3DES
-        ):
+        if keyType == DESFireKeyType.DF_KEY_2K3DES or keyType == DESFireKeyType.DF_KEY_3K3DES:
             sessionKeyBytes = [(a & 0b11111110) for a in sessionKeyBytes]
         ## now we have the session key, so we reinitialize the crypto!!!
         key.GenerateCmac(sessionKeyBytes)
         self.sessionKey = key
         return self.sessionKey
 
-    def _communicate(
-        self, apdu_cmd, description, nativ=False, allow_continue_fallthrough=False
-    ):
+    def _communicate(self, apdu_cmd, description, nativ=False, allow_continue_fallthrough=False):
         """Communicate with a NFC tag.
         Send in outgoing request and waith for a card reply.
         TODO: Handle additional framing via 0xaf
@@ -213,9 +203,7 @@ class DESFire:
             )
 
             resp = self.device.transceive(apdu_cmd)
-            self.logger.debug(
-                "Received APDU response: %s", byte_array_to_human_readable_hex(resp)
-            )
+            self.logger.debug("Received APDU response: %s", byte_array_to_human_readable_hex(resp))
 
             if not nativ:
                 if resp[-2] != 0x91:
@@ -281,12 +269,8 @@ class DESFire:
         # calculate cmac for outgoing message
         if withTXCMAC:
             TXCMAC = self.sessionKey.CalculateCmac(apdu_cmd)
-            self.logger.debug(
-                "TXCMAC      : " + byte_array_to_human_readable_hex(TXCMAC)
-            )
-        response = self._communicate(
-            apdu_cmd, description, nativ, allow_continue_fallthrough
-        )
+            self.logger.debug("TXCMAC      : " + byte_array_to_human_readable_hex(TXCMAC))
+        response = self._communicate(apdu_cmd, description, nativ, allow_continue_fallthrough)
 
         if self.isAuthenticated and len(response) >= 8 and withRXCMAC:
             # after authentication, there is always an 8 bytes long CMAC coming from the card, to ensure message integrity
@@ -306,12 +290,8 @@ class DESFire:
             #    response = []
             cmacdata = response + [0x00]
             RXCMAC_CALC = self.sessionKey.CalculateCmac(cmacdata)
-            self.logger.debug(
-                "RXCMAC      : " + byte_array_to_human_readable_hex(RXCMAC)
-            )
-            self.logger.debug(
-                "RXCMAC_CALC: " + byte_array_to_human_readable_hex(RXCMAC_CALC)
-            )
+            self.logger.debug("RXCMAC      : " + byte_array_to_human_readable_hex(RXCMAC))
+            self.logger.debug("RXCMAC_CALC: " + byte_array_to_human_readable_hex(RXCMAC_CALC))
             self.cmac = RXCMAC_CALC
             if bytes(RXCMAC) != bytes(RXCMAC_CALC[0 : len(RXCMAC)]):
                 raise Exception("RXCMAC not equal")
@@ -350,16 +330,12 @@ class DESFire:
         self.logger.debug("GetApplicationIDs")
         appids = []
         cmd = DESFireCommand.DF_INS_GET_APPLICATION_IDS.value
-        raw_data = self.communicate(
-            [cmd], "Get Application IDs", nativ=True, withTXCMAC=self.isAuthenticated
-        )
+        raw_data = self.communicate([cmd], "Get Application IDs", nativ=True, withTXCMAC=self.isAuthenticated)
 
         pointer = 0
         apps = []
         while pointer < len(raw_data):
-            appid = (
-                [raw_data[pointer + 2]] + [raw_data[pointer + 1]] + [raw_data[pointer]]
-            )
+            appid = [raw_data[pointer + 2]] + [raw_data[pointer + 1]] + [raw_data[pointer]]
             self.logger.debug("Reading %s", byte_array_to_human_readable_hex(appid))
             apps.append(appid)
             pointer += 3
@@ -368,7 +344,6 @@ class DESFire:
 
     def getKeySetting(self):
         ret = DESFireKey()
-        parameters = []
         # apdu_command = self.command(DESFire_DEF.DF_INS_GET_KEY_SETTINGS.value)
         resp = self.communicate(
             [DESFireCommand.DF_INS_GET_KEY_SETTINGS.value],
@@ -376,9 +351,7 @@ class DESFire:
             nativ=True,
             withTXCMAC=self.isAuthenticated,
         )
-        ret.setKeySettings(
-            resp[1] & 0x0F, DESFireKeyType(resp[1] & 0xF0), resp[0] & 0x07
-        )
+        ret.setKeySettings(resp[1] & 0x0F, DESFireKeyType(resp[1] & 0xF0), resp[0] & 0x07)
         return ret
 
     def getCardVersion(self):
@@ -393,9 +366,7 @@ class DESFire:
         """
         self.logger.debug("Getting card version info")
         cmd = DESFireCommand.DF_INS_GET_VERSION.value
-        raw_data = self.communicate(
-            [cmd], "GetCardVersion", nativ=True, withTXCMAC=self.isAuthenticated
-        )
+        raw_data = self.communicate([cmd], "GetCardVersion", nativ=True, withTXCMAC=self.isAuthenticated)
         return DESFireCardVersion(raw_data)
 
     def formatCard(self):
@@ -409,9 +380,7 @@ class DESFire:
         """
         self.logger.debug("Formatting card")
         cmd = DESFireCommand.DF_INS_FORMAT_PICC.value
-        self.communicate(
-            [cmd], "Format Card", nativ=True, withTXCMAC=self.isAuthenticated
-        )
+        self.communicate([cmd], "Format Card", nativ=True, withTXCMAC=self.isAuthenticated)
 
     ###### Application related
 
@@ -424,17 +393,12 @@ class DESFire:
             None
         """
         appid = getList(appid, 3, "big")
-        self.logger.debug(
-            "Selecting application with AppID %s"
-            % (byte_array_to_human_readable_hex(appid),)
-        )
+        self.logger.debug("Selecting application with AppID %s" % (byte_array_to_human_readable_hex(appid),))
 
         parameters = [appid[2], appid[1], appid[0]]
 
         cmd = DESFireCommand.DF_INS_SELECT_APPLICATION.value
-        self.communicate(
-            self.command(cmd, parameters), "select Application", nativ=True
-        )
+        self.communicate(self.command(cmd, parameters), "select Application", nativ=True)
         # if new application is selected, authentication needs to be carried out again
         self.isAuthenticated = False
         self.lastSelectedApplication = appid
@@ -451,10 +415,7 @@ class DESFire:
             None
         """
         appid = getList(appid, 3, "big")
-        self.logger.debug(
-            "Creating application with appid: %s, "
-            % (byte_array_to_human_readable_hex(appid))
-        )
+        self.logger.debug("Creating application with appid: %s, " % (byte_array_to_human_readable_hex(appid)))
         appid = [appid[2], appid[1], appid[0]]
         keycount = getInt(keycount, "big")
         params = appid + [calc_key_settings(keysettings)] + [keycount | type.value]
@@ -475,9 +436,7 @@ class DESFire:
             None
         """
         appid = getList(appid, 3, "big")
-        self.logger.debug(
-            "Deleting application for AppID %s", byte_array_to_human_readable_hex(appid)
-        )
+        self.logger.debug("Deleting application for AppID %s", byte_array_to_human_readable_hex(appid))
 
         appid = [appid[2], appid[1], appid[0]]
 
@@ -508,24 +467,14 @@ class DESFire:
         fileIDs = []
 
         cmd = DESFireCommand.DF_INS_GET_FILE_IDS.value
-        raw_data = self.communicate(
-            [cmd], "get File ID's", nativ=True, withTXCMAC=self.isAuthenticated
-        )
+        raw_data = self.communicate([cmd], "get File ID's", nativ=True, withTXCMAC=self.isAuthenticated)
         if len(raw_data) == 0:
             self.logger.debug("No files found")
         else:
             for byte in raw_data:
                 fileIDs.append(byte)
             self.logger.debug(
-                "File ids: %s"
-                % (
-                    "".join(
-                        [
-                            byte_array_to_human_readable_hex(bytearray([id]))
-                            for id in fileIDs
-                        ]
-                    ),
-                )
+                "File ids: %s" % ("".join([byte_array_to_human_readable_hex(bytearray([id])) for id in fileIDs]),)
             )
         return fileIDs
 
@@ -539,10 +488,7 @@ class DESFire:
             DESFireFileSettings: An object describing all settings for the file
         """
         fileid = getList(fileid, 1, "big")
-        self.logger.debug(
-            "Getting file settings for file %s"
-            % (byte_array_to_human_readable_hex(fileid),)
-        )
+        self.logger.debug("Getting file settings for file %s" % (byte_array_to_human_readable_hex(fileid),))
 
         cmd = DESFireCommand.DF_INS_GET_FILE_SETTINGS.value
         raw_data = raw_data = self.communicate(
@@ -573,11 +519,7 @@ class DESFire:
         while length > 0:
             count = min(length, 48)
             cmd = DESFireCommand.DF_INS_READ_DATA.value
-            params = (
-                fileId
-                + getList(offset + ioffset, 3, "little")
-                + getList(count, 3, "little")
-            )
+            params = fileId + getList(offset + ioffset, 3, "little") + getList(count, 3, "little")
             ret += self.communicate(
                 self.command(cmd, params),
                 "Read file data",
@@ -616,9 +558,7 @@ class DESFire:
 
     def deleteFile(self, fileId):
         return self.communicate(
-            self.command(
-                DESFireCommand.DF_INS_DELETE_FILE.value, getList(fileId, 1, "little")
-            ),
+            self.command(DESFireCommand.DF_INS_DELETE_FILE.value, getList(fileId, 1, "little")),
             "Delete File",
             nativ=True,
             withTXCMAC=self.isAuthenticated,
@@ -629,9 +569,7 @@ class DESFire:
         params += [0x00]
         params += getList(filePermissions.pack(), 2, "big")
         params += getList(getInt(fileSize, "big"), 3, "little")
-        apdu_command = self.command(
-            DESFireCommand.DF_INS_CREATE_STD_DATA_FILE.value, params
-        )
+        apdu_command = self.command(DESFireCommand.DF_INS_CREATE_STD_DATA_FILE.value, params)
         self.communicate(
             apdu_command,
             "createStdDataFile",
@@ -701,12 +639,8 @@ class DESFire:
         if not self.isAuthenticated:
             raise Exception("Not authenticated!")
 
-        self.logger.debug(
-            "curKey : " + byte_array_to_human_readable_hex(curKey.getKey())
-        )
-        self.logger.debug(
-            "newKey : " + byte_array_to_human_readable_hex(newKey.getKey())
-        )
+        self.logger.debug("curKey : " + byte_array_to_human_readable_hex(curKey.getKey()))
+        self.logger.debug("newKey : " + byte_array_to_human_readable_hex(newKey.getKey()))
 
         isSameKey = keyNo == self.lastAuthKeyNo
         # self.logger.debug('isSameKey : ' + str(isSameKey))
@@ -722,13 +656,9 @@ class DESFire:
         if not isSameKey:
             keyData_xor = []
             if len(newKey.getKey()) > len(curKey.getKey()):
-                keyData_xor = bytearray(
-                    strxor(bytes(newKey.getKey()), bytes(curKey.getKey() * 2))
-                )
+                keyData_xor = bytearray(strxor(bytes(newKey.getKey()), bytes(curKey.getKey() * 2)))
             else:
-                keyData_xor = bytearray(
-                    strxor(bytes(newKey.getKey()), bytes(curKey.getKey()))
-                )
+                keyData_xor = bytearray(strxor(bytes(newKey.getKey()), bytes(curKey.getKey())))
             cryptogram += keyData_xor
         else:
             cryptogram += newKey.getKey()
@@ -738,9 +668,7 @@ class DESFire:
 
         cryptogram += bytearray(CRC32(cryptogram).to_bytes(4, byteorder="little"))
         if not isSameKey:
-            cryptogram += bytearray(
-                CRC32(newKey.getKey()).to_bytes(4, byteorder="little")
-            )
+            cryptogram += bytearray(CRC32(newKey.getKey()).to_bytes(4, byteorder="little"))
 
         # self.logger.debug( (int2hex(DESFireCommand.DF_INS_CHANGE_KEY.value) + int2hex(keyNo) + cryptogram).encode('hex'))
         raw_data = self.communicate(
@@ -767,8 +695,6 @@ class DESFire:
 
     def createKeySetting(self, key, keyNumbers, keyType, keySettings):
         ret = DESFireKey()
-        ret.setKeySettings(
-            getInt(keyNumbers, "big"), keyType, calc_key_settings(keySettings)
-        )
+        ret.setKeySettings(getInt(keyNumbers, "big"), keyType, calc_key_settings(keySettings))
         ret.setKey(getList(key))
         return ret

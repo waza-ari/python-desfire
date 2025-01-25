@@ -1,13 +1,11 @@
 """Misc. utility functions."""
 
 import crcmod.predefined
-
 from Crypto.Util.number import bytes_to_long, long_to_bytes
-from Crypto.Util.py3compat import *
 
 
 def byte_array_to_human_readable_hex(bytes):
-    return "".join("%02X " % b for b in bytes)
+    return "".join(f"{b:02X} " for b in bytes)
 
 
 def getInt(data, byteorder="big"):
@@ -43,7 +41,6 @@ def getBytes(data, byteSize=2):
 
 
 def CRC32(data):
-    crc = [0xFF, 0xFF, 0xFF, 0xFF]
     crc32_func = crcmod.predefined.mkCrcFun("jamcrc")
     return crc32_func(bytes(data))
 

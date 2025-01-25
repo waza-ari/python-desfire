@@ -2,9 +2,10 @@ import struct
 from enum import Enum
 
 from Crypto.Cipher import AES, DES, DES3
+from Crypto.Util.py3compat import bchr, bord
 from Crypto.Util.strxor import strxor
 
-from .util import *
+from desfire.util import CRC32, byte_array_to_human_readable_hex, getBytes, shift_bytes
 
 
 def chunks(data, n):
@@ -15,9 +16,7 @@ def chunks(data, n):
 
 
 class DESFireCommand(Enum):
-    MAX_FRAME_SIZE = (
-        60  # The maximum total length of a packet that is transfered to / from the card
-    )
+    MAX_FRAME_SIZE = 60  # The maximum total length of a packet that is transfered to / from the card
 
     # ------- Desfire legacy instructions --------
 
@@ -57,9 +56,7 @@ class DESFireCommand(Enum):
     DF_COMMIT_TRANSACTION = 0xC7
     DF_INS_ABORT_TRANSACTION = 0xA7
 
-    DF_INS_ADDITIONAL_FRAME = (
-        0xAF  # data did not fit into a frame, another frame will follow
-    )
+    DF_INS_ADDITIONAL_FRAME = 0xAF  # data did not fit into a frame, another frame will follow
 
     # -------- Desfire EV1 instructions ----------
 
@@ -134,9 +131,7 @@ class DESFireCmac(Enum):
     MAC_Rmac = (
         4,
     )  # The CMAC must be calculated for the RX data received from the card. If status == ST_Success -> verify the CMAC in the response
-    MAC_Rcrypt = (
-        8,
-    )  # The data received from the card must be decrypted with the session key
+    MAC_Rcrypt = (8,)  # The data received from the card must be decrypted with the session key
 
 
 class DESFireKeyType(Enum):
@@ -153,14 +148,18 @@ class DESFireCBC(Enum):
 
 class DESFireKeySettings(Enum):
     # ------------ BITS 0-3 ---------------
-    KS_ALLOW_CHANGE_MK = (
-        0x01  # If this bit is set, the MK can be changed, otherwise it is frozen.
+    KS_ALLOW_CHANGE_MK = 0x01  # If this bit is set, the MK can be changed, otherwise it is frozen.
+    KS_LISTING_WITHOUT_MK = (
+        0x02  # Picc key: If this bit is set, GetApplicationIDs, GetKeySettings do not require MK authentication.
     )
-    KS_LISTING_WITHOUT_MK = 0x02  # Picc key: If this bit is set, GetApplicationIDs, GetKeySettings do not require MK authentication.
     # App  key: If this bit is set, GetFileIDs, GetFileSettings, GetKeySettings do not require MK authentication.
-    KS_CREATE_DELETE_WITHOUT_MK = 0x04  # Picc key: If this bit is set, CreateApplication does not require MK authentication.
+    KS_CREATE_DELETE_WITHOUT_MK = (
+        0x04  # Picc key: If this bit is set, CreateApplication does not require MK authentication.
+    )
     # App  key: If this bit is set, CreateFile, DeleteFile do not require MK authentication.
-    KS_CONFIGURATION_CHANGEABLE = 0x08  # If this bit is set, the configuration settings of the MK can be changed, otherwise they are frozen.
+    KS_CONFIGURATION_CHANGEABLE = (
+        0x08  # If this bit is set, the configuration settings of the MK can be changed, otherwise they are frozen.
+    )
 
     # ------------ BITS 4-7 (not used for the PICC master key) -------------
     KS_CHANGE_KEY_WITH_MK = 0x00  # A key change requires MK authentication
@@ -177,7 +176,9 @@ class DESFireKeySettings(Enum):
     KS_CHANGE_KEY_WITH_KEY_B = 0xB0  # A key change requires authentication with key 11
     KS_CHANGE_KEY_WITH_KEY_C = 0xC0  # A key change requires authentication with key 12
     KS_CHANGE_KEY_WITH_KEY_D = 0xD0  # A key change requires authentication with key 13
-    KS_CHANGE_KEY_WITH_TARGETED_KEY = 0xE0  # A key change requires authentication with the same key that is to be changed
+    KS_CHANGE_KEY_WITH_TARGETED_KEY = (
+        0xE0  # A key change requires authentication with the same key that is to be changed
+    )
     KS_CHANGE_KEY_FROZEN = 0xF0  # All keys are frozen
 
     # -------------------------------------
@@ -197,7 +198,7 @@ class DESFireKeySet:
     change = DESFireKeySettings.KS_FACTORY_DEFAULT
 
     def __repr__(self):
-        return "master:" + master.name + "\nchange:" + change.name
+        return "master:" + self.master.name + "\nchange:" + self.change.name
 
 
 class DESFireFileEncryption(Enum):
@@ -255,17 +256,13 @@ class DESFireKey:
                 self.CipherBlocksize = 8
                 self.ClearIV()
                 self.ciphermod = DES
-                self.Cipher = DES.new(
-                    bytes(self.keyBytes), DES.MODE_CBC, bytes(self.IV)
-                )
+                self.Cipher = DES.new(bytes(self.keyBytes), DES.MODE_CBC, bytes(self.IV))
             # 2DES is used (3DES with 2 keys only)
             elif self.keySize == 16:
                 self.CipherBlocksize = 8
                 self.ciphermod = DES3
                 self.ClearIV()
-                self.Cipher = DES3.new(
-                    bytes(self.keyBytes), DES.MODE_CBC, bytes(self.IV)
-                )
+                self.Cipher = DES3.new(bytes(self.keyBytes), DES.MODE_CBC, bytes(self.IV))
 
             else:
                 raise Exception("Key length error!")
@@ -309,15 +306,12 @@ class DESFireKey:
         return list(bytearray(self.Cipher.encrypt(bytes(data))))
 
     def EncryptMsg(self, data, withCRC=False, encryptBegin=1):
-        sdata = data.copy()
         if withCRC:
             data += bytearray(CRC32(data).to_bytes(4, byteorder="little"))
 
         data += [0x00] * (-(len(data) - encryptBegin) % self.CipherBlocksize)
 
-        ret = list(
-            bytearray(data[0:encryptBegin]) + self.cmac.Encrypt(data[encryptBegin:])
-        )
+        ret = list(bytearray(data[0:encryptBegin]) + self.cmac.Encrypt(data[encryptBegin:]))
         # self.GenerateCmac()
         # self.CalculateCmac(bytearray(data))
         return ret
@@ -382,8 +376,7 @@ class CMAC:
             const_Rb = 0x87
         else:
             raise TypeError(
-                "CMAC requires a cipher with a block size of 8 or 16 bytes, not %d"
-                % (ciphermod.block_size,)
+                "CMAC requires a cipher with a block size of 8 or 16 bytes, not %d" % (ciphermod.block_size,)
             )
         self.digest_size = ciphermod.block_size
 
@@ -407,13 +400,9 @@ class CMAC:
         ndata = data.copy()
         if len(ndata) % self._bs:
             ndata += [0x80] + [0x00] * (self._bs - len(ndata) % self._bs - 1)
-            ndata = bytes(ndata[0 : -self._bs]) + strxor(
-                bytes(ndata[-self._bs :]), self._k2
-            )
+            ndata = bytes(ndata[0 : -self._bs]) + strxor(bytes(ndata[-self._bs :]), self._k2)
         else:
-            ndata = bytes(ndata[0 : -self._bs]) + strxor(
-                bytes(ndata[-self._bs :]), self._k1
-            )
+            ndata = bytes(ndata[0 : -self._bs]) + strxor(bytes(ndata[-self._bs :]), self._k1)
         ret = self._mac.encrypt(ndata)
         return ret[-self._bs :]
 
@@ -500,12 +489,7 @@ class DESFireFilePermissions:
 
     def pack(self):
         # return (self.ReadAccess << 12) | (self.WriteAccess <<  8) | (self.ReadAndWriteAccess <<  4) | self.ChangeAccess;
-        return (
-            (self.ReadAccess << 4)
-            | (self.WriteAccess)
-            | (self.ReadAndWriteAccess << 12)
-            | (self.ChangeAccess << 8)
-        )
+        return (self.ReadAccess << 4) | (self.WriteAccess) | (self.ReadAndWriteAccess << 12) | (self.ChangeAccess << 8)
 
     def unpack(self, data):
         data = int.from_bytes(getBytes(data), byteorder="big")
@@ -568,17 +552,11 @@ class DESFireFileSettings:
 
         if self.FileType == DESFireFileType.MDFT_LINEAR_RECORD_FILE_WITH_BACKUP:
             self.RecordSize = struct.unpack("<I", bytes(data[4:6] + [0x00, 0x00]))[0]
-            self.MaxNumberRecords = struct.unpack(
-                "<I", bytes(data[6:8] + [0x00, 0x00])
-            )[0]
-            self.CurrentNumberRecords = struct.unpack(
-                "<I", bytes(data[8:10] + [0x00, 0x00])
-            )[0]
+            self.MaxNumberRecords = struct.unpack("<I", bytes(data[6:8] + [0x00, 0x00]))[0]
+            self.CurrentNumberRecords = struct.unpack("<I", bytes(data[8:10] + [0x00, 0x00]))[0]
 
         elif self.FileType == DESFireFileType.MDFT_STANDARD_DATA_FILE:
-            self.FileSize = self.FileSize = struct.unpack(
-                "<I", bytes(data[4:6] + [0x00, 0x00])
-            )[0]
+            self.FileSize = self.FileSize = struct.unpack("<I", bytes(data[4:6] + [0x00, 0x00]))[0]
 
         else:
             # TODO: We can still access common attributes
@@ -587,16 +565,16 @@ class DESFireFileSettings:
 
     def __repr__(self):
         temp = " ----- DESFireFileSettings ----\r\n"
-        temp += "File type: %s\r\n" % (self.FileType.name)
-        temp += "Encryption: %s\r\n" % (self.Encryption.name)
-        temp += "Permissions: %s\r\n" % (repr(self.Permissions))
+        temp += f"File type: {self.FileType.name}\r\n"
+        temp += f"Encryption: {self.Encryption.name}\r\n"
+        temp += f"Permissions: {repr(self.Permissions)}\r\n"
         if self.FileType == DESFireFileType.MDFT_LINEAR_RECORD_FILE_WITH_BACKUP:
-            temp += "RecordSize: %d\r\n" % (self.RecordSize)
-            temp += "MaxNumberRecords: %d\r\n" % (self.MaxNumberRecords)
-            temp += "CurrentNumberRecords: %d\r\n" % (self.CurrentNumberRecords)
+            temp += "RecordSize: %d\r\n" % (self.RecordSize)  # noqa: UP031
+            temp += "MaxNumberRecords: %d\r\n" % (self.MaxNumberRecords)  # noqa: UP031
+            temp += "CurrentNumberRecords: %d\r\n" % (self.CurrentNumberRecords)  # noqa: UP031
 
         elif self.FileType == DESFireFileType.MDFT_STANDARD_DATA_FILE:
-            temp += "File size: %d\r\n" % (self.FileSize)
+            temp += "File size: %d\r\n" % (self.FileSize)  # noqa: UP031
 
         return temp
 
