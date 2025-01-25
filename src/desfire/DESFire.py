@@ -1,7 +1,7 @@
 import logging
-from random import Random
 
 import pyDes
+from Crypto.Random import get_random_bytes
 from Crypto.Util.strxor import strxor
 
 from desfire.DESFire_DEF import (
@@ -125,7 +125,7 @@ class DESFire:
         if challenge is not None:
             RndA = bytes(bytearray.fromhex(challenge))
         else:
-            RndA = Random.get_random_bytes(len(RndB))
+            RndA = get_random_bytes(len(RndB))
         self.logger.debug("Random A: " + byte_array_to_human_readable_hex(RndA))
         RndAB = list(RndA) + RndB_rot
         self.logger.debug("Random AB: " + byte_array_to_human_readable_hex(RndAB))
