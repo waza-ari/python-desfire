@@ -1,0 +1,21 @@
+[project]
+name = "desffire"
+version = "0.11"
+description = "DESFire library for python"
+authors = [
+    {name = "Daniel Herrmann",email = "daniel.herrmann@makerspace-darmstadt.de"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pycrypto (>=2.6.1,<3.0.0)",
+    "enum34 (>=1.1.10,<2.0.0)",
+    "pyscard (>=2.2.1,<3.0.0)",
+    "pydes (>=2.0.1,<3.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
