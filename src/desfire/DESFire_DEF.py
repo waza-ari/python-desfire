@@ -5,6 +5,7 @@ from Crypto.Cipher import AES, DES, DES3
 from Crypto.Util.py3compat import bchr, bord
 from Crypto.Util.strxor import strxor
 
+from desfire.exceptions import DESFireException
 from desfire.util import CRC32, byte_array_to_human_readable_hex, getBytes, shift_bytes
 
 
@@ -222,6 +223,21 @@ class DESFireKey:
         self.keyNumbers = 0
         self.ciphermod = None
 
+    def _get_cipher(self):
+        """
+        Returns a cipher object for the key depending on the key type
+        """
+        if self.keyType == DESFireKeyType.DF_KEY_AES:
+            return AES.new(bytes(self.keyBytes), AES.MODE_CBC, bytes(self.IV))
+        elif self.keyType == DESFireKeyType.DF_KEY_2K3DES and self.keySize == 8:
+            return DES.new(bytes(self.keyBytes), DES.MODE_CBC, bytes(self.IV))
+        elif self.keyType == DESFireKeyType.DF_KEY_2K3DES and self.keySize == 16:
+            return DES3.new(bytes(self.keyBytes), DES.MODE_CBC, bytes(self.IV))
+        elif self.keyType == DESFireKeyType.DF_KEY_3K3DES:
+            return DES3.new(bytes(self.keyBytes), DES.MODE_CBC, bytes(self.IV))
+        else:
+            raise DESFireException("Unknown key type!")
+
     def listHumanKeySettings(self):
         settings = []
         for i in range(0, 16):
@@ -248,7 +264,6 @@ class DESFireKey:
             self.CipherBlocksize = 16
             self.ClearIV()
             self.ciphermod = AES
-            self.Cipher = AES.new(bytes(self.keyBytes), AES.MODE_CBC, bytes(self.IV))
 
         elif self.keyType == DESFireKeyType.DF_KEY_2K3DES:
             # DES is used
@@ -256,13 +271,11 @@ class DESFireKey:
                 self.CipherBlocksize = 8
                 self.ClearIV()
                 self.ciphermod = DES
-                self.Cipher = DES.new(bytes(self.keyBytes), DES.MODE_CBC, bytes(self.IV))
             # 2DES is used (3DES with 2 keys only)
             elif self.keySize == 16:
                 self.CipherBlocksize = 8
                 self.ciphermod = DES3
                 self.ClearIV()
-                self.Cipher = DES3.new(bytes(self.keyBytes), DES.MODE_CBC, bytes(self.IV))
 
             else:
                 raise Exception("Key length error!")
@@ -272,10 +285,9 @@ class DESFireKey:
             # 3DES is used
             self.CipherBlocksize = 8
             self.ClearIV()
-            self.Cipher = DES3.new(bytes(self.keyBytes), DES.MODE_CBC, bytes(self.IV))
 
         else:
-            raise Exception("Unknown key type!")
+            raise DESFireException("Unknown key type!")
 
     def setDefaultKeyNotSet(self):
         if self.keyBytes is None:
@@ -303,7 +315,7 @@ class DESFireKey:
     def Encrypt(self, data):
         # todo assert on blocksize
         self.IV = data[-self.CipherBlocksize :]
-        return list(bytearray(self.Cipher.encrypt(bytes(data))))
+        return list(bytearray(self._get_cipher().encrypt(bytes(data))))
 
     def EncryptMsg(self, data, withCRC=False, encryptBegin=1):
         if withCRC:
@@ -318,7 +330,7 @@ class DESFireKey:
 
     def Decrypt(self, dataEnc):
         # todo assert on blocksize
-        block = self.Cipher.decrypt(bytes(dataEnc))
+        block = self._get_cipher().decrypt(bytes(dataEnc))
         self.IV = block[-self.CipherBlocksize :]
         return list(bytearray(block))
 
