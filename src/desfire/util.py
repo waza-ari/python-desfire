@@ -6,13 +6,6 @@ from Crypto.Util.number import bytes_to_long, long_to_bytes
 from .enums import DESFireKeySettings
 
 
-def to_human_readable_hex(data: list[int]) -> str:
-    """
-    Convert a list of commands to a human readable hex string.
-    """
-    return "".join(f"{b:02X} " for b in data)
-
-
 def get_int(data: int | str | bytearray | bytes, byteorder: Literal["little", "big"] = "big") -> int:
     """
     Convert a bytearray, hex string or int to an integer.

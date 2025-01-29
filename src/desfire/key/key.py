@@ -1,7 +1,8 @@
-from ..enums.desfire_keysettings import DESFireKeySettings
-from ..enums.desfire_keytype import DESFireKeyType
+from smartcard.util import toHexString
+
+from ..enums import DESFireKeySettings, DESFireKeyType
 from ..exceptions import DESFireException
-from ..util import CRC32, to_human_readable_hex, xor_lists
+from ..util import CRC32, xor_lists
 from .cmac import CMAC
 from .crypto import CipherFactory
 
@@ -28,7 +29,7 @@ class DESFireKey:
         self.iv0 = [0] * key_size
 
     def set_iv(self, iv: list[int]):
-        print("Setting IV to", to_human_readable_hex(iv))
+        print("Setting IV to", toHexString(iv))
         self.iv = iv
 
     def cipher_init(self):

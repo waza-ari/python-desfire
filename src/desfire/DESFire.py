@@ -2,6 +2,7 @@ import logging
 
 from Crypto.Random import get_random_bytes
 from Crypto.Util.strxor import strxor
+from smartcard.util import toHexString
 
 from .enums import DESFireCommand, DESFireCommunicationMode, DESFireKeyType, DESFireStatus
 from .exceptions import DESFireAuthException, DESFireCommunicationError, DESFireException
@@ -9,7 +10,7 @@ from .file.settings import DESFireFileSettings
 from .key.card_version import DESFireCardVersion
 from .key.key import DESFireKey
 from .pcsc import Device
-from .util import CRC32, calc_key_settings, get_int, get_list, to_human_readable_hex
+from .util import CRC32, calc_key_settings, get_int, get_list
 
 
 class DESFire:
@@ -59,9 +60,9 @@ class DESFire:
         # Loop until all data is received
         while additional_data:
             # Send the APDU command to the card
-            self.logger.debug("Running APDU command, sending: %s", to_human_readable_hex(apdu_cmd))
+            self.logger.debug("Running APDU command, sending: %s", toHexString(apdu_cmd))
             resp = self.device.transceive(apdu_cmd)
-            self.logger.debug("Received APDU response: %s", to_human_readable_hex(resp))
+            self.logger.debug("Received APDU response: %s", toHexString(resp))
 
             # DESfire native commands are used
             if native:
@@ -181,10 +182,10 @@ class DESFire:
             assert self.session_key is not None
             # Calculate the CMAC of the data
             cmac_data = response[:-8] + [0x00]
-            self.logger.debug("Calculating CMAC for data: " + to_human_readable_hex(cmac_data))
+            self.logger.debug("Calculating CMAC for data: " + toHexString(cmac_data))
             calculated_cmac = self.session_key.calculate_cmac(cmac_data)[:8]
-            self.logger.debug("RXCMAC      : " + to_human_readable_hex(response[-8:]))
-            self.logger.debug("RXCMAC_CALC : " + to_human_readable_hex(calculated_cmac))
+            self.logger.debug("RXCMAC      : " + toHexString(response[-8:]))
+            self.logger.debug("RXCMAC_CALC : " + toHexString(calculated_cmac))
             if bytes(response[-8:]) != bytes(calculated_cmac):
                 raise Exception("CMAC verification failed!")
             return response[:-8]
@@ -199,9 +200,9 @@ class DESFire:
 
             # Decrypt the response
             padded_response = self._add_padding(response)
-            self.logger.debug("Padded response: " + to_human_readable_hex(padded_response))
+            self.logger.debug("Padded response: " + toHexString(padded_response))
             decrypted_response = self.session_key.decrypt(padded_response)
-            self.logger.debug("Decrypted response: " + to_human_readable_hex(response))
+            self.logger.debug("Decrypted response: " + toHexString(response))
 
             # Update IV to the last block of the encrypted data
             self.session_key.set_iv(response[-self.session_key.cipher_block_size :])
@@ -215,9 +216,9 @@ class DESFire:
                 4 if self.session_key.key_type in [DESFireKeyType.DF_KEY_AES, DESFireKeyType.DF_KEY_3K3DES] else 2
             )
             received_crc = decrypted_response[-crc_bytes:]
-            self.logger.debug("Received CRC  : " + to_human_readable_hex(received_crc))
+            self.logger.debug("Received CRC  : " + toHexString(received_crc))
             calculated_crc = CRC32(decrypted_response[:-crc_bytes] + [0x00])
-            self.logger.debug("Calculated CRC: " + to_human_readable_hex(calculated_crc))
+            self.logger.debug("Calculated CRC: " + toHexString(calculated_crc))
 
             if bytes(received_crc) != bytes(calculated_crc):
                 raise Exception("CRC verification failed!")
@@ -310,7 +311,7 @@ class DESFire:
             DESFireCommunicationMode.PLAIN,
             af_passthrough=True,
         )
-        self.logger.debug("Random B (enc):" + to_human_readable_hex(RndB_enc))
+        self.logger.debug("Random B (enc):" + toHexString(RndB_enc))
 
         # Check if the key type is correct
         if (key.key_type == DESFireKeyType.DF_KEY_3K3DES or key.key_type == DESFireKeyType.DF_KEY_AES) and len(
@@ -325,25 +326,25 @@ class DESFire:
 
         # Decrypt the RndB using the provided master key
         RndB = key.decrypt(RndB_enc)
-        self.logger.debug("Random B (dec): " + to_human_readable_hex(RndB))
+        self.logger.debug("Random B (dec): " + toHexString(RndB))
 
         # Rotate RndB to the left by one byte
         RndB_rot = RndB[1:] + [RndB[0]]
-        self.logger.debug("Random B (dec, rot): " + to_human_readable_hex(RndB_rot))
+        self.logger.debug("Random B (dec, rot): " + toHexString(RndB_rot))
 
         # Challenge can be either provided externally, or generated randomly
         if challenge is not None:
             RndA = get_list(challenge)
         else:
             RndA = get_list(get_random_bytes(len(RndB)))
-        self.logger.debug("Random A: " + to_human_readable_hex(RndA))
+        self.logger.debug("Random A: " + toHexString(RndA))
 
         # Concatenate RndA and RndB_rot and encrypt it with the master key
         RndAB = list(RndA) + RndB_rot
-        self.logger.debug("Random AB: " + to_human_readable_hex(RndAB))
+        self.logger.debug("Random AB: " + toHexString(RndAB))
         key.set_iv(RndB_enc)
         RndAB_enc = key.encrypt(RndAB)
-        self.logger.debug("Random AB (enc): " + to_human_readable_hex(RndAB_enc))
+        self.logger.debug("Random AB (enc): " + toHexString(RndAB_enc))
 
         # Send the encrypted RndAB to the card, it should reply with a positive result
         params = RndAB_enc
@@ -353,12 +354,12 @@ class DESFire:
         )
 
         # Verify that the response matches our original challenge
-        self.logger.debug("Random A (enc): " + to_human_readable_hex(RndA_enc))
+        self.logger.debug("Random A (enc): " + toHexString(RndA_enc))
         key.set_iv(RndAB_enc[-key.cipher_block_size :])
         RndA_dec = key.decrypt(RndA_enc)
-        self.logger.debug("Random A (dec): " + to_human_readable_hex(RndA_dec))
+        self.logger.debug("Random A (dec): " + toHexString(RndA_dec))
         RndA_dec_rot = RndA_dec[-1:] + RndA_dec[0:-1]
-        self.logger.debug("Random A (dec, rot): " + to_human_readable_hex(RndA_dec_rot))
+        self.logger.debug("Random A (dec, rot): " + toHexString(RndA_dec_rot))
 
         if bytes(RndA) != bytes(RndA_dec_rot):
             raise Exception("Authentication FAILED!")
@@ -483,7 +484,7 @@ class DESFire:
         apps = []
         while pointer < len(raw_data):
             appid = [raw_data[pointer + 2]] + [raw_data[pointer + 1]] + [raw_data[pointer]]
-            self.logger.debug("Reading %s", to_human_readable_hex(appid))
+            self.logger.debug("Reading %s", toHexString(appid))
             apps.append(appid)
             pointer += 3
 
@@ -495,7 +496,7 @@ class DESFire:
         Authentication is NOT ALWAYS needed to call this function. Depends on the application settings.
         """
         parsed_appid = get_list(appid, 3, "big")
-        self.logger.debug(f"Selecting application with AppID {to_human_readable_hex(parsed_appid)}")
+        self.logger.debug(f"Selecting application with AppID {toHexString(parsed_appid)}")
 
         # TODO: Check why this is reversed after parsing the list big endian above
         parameters = [parsed_appid[2], parsed_appid[1], parsed_appid[0]]
@@ -541,7 +542,7 @@ class DESFire:
         else:
             for byte in raw_data:
                 file_ids.append(byte)
-            self.logger.debug(f"File ids: {''.join([to_human_readable_hex(bytearray([id])) for id in file_ids])}")
+            self.logger.debug(f"File ids: {''.join([toHexString(bytearray([id])) for id in file_ids])}")
 
         return file_ids
 
@@ -556,7 +557,7 @@ class DESFire:
             raise DESFireException("No application selected, call select_application first")
 
         file_id_bytes = get_list(file_id, 1, "big")
-        self.logger.debug(f"Getting file settings for file {to_human_readable_hex(file_id_bytes)}")
+        self.logger.debug(f"Getting file settings for file {toHexString(file_id_bytes)}")
 
         # Get the file settings
         raw_data = raw_data = self._transceive(
@@ -638,7 +639,7 @@ class DESFire:
         """
 
         appid = get_list(appid, 3, "big")
-        self.logger.debug(f"Creating application with appid: {to_human_readable_hex(appid)}, ")
+        self.logger.debug(f"Creating application with appid: {toHexString(appid)}, ")
         appid = [appid[2], appid[1], appid[0]]
         keycount = get_int(keycount, "big")
         params = appid + [calc_key_settings(keysettings)] + [keycount | type.value]
@@ -657,7 +658,7 @@ class DESFire:
             None
         """
         appid = get_list(appid, 3, "big")
-        self.logger.debug("Deleting application for AppID %s", to_human_readable_hex(appid))
+        self.logger.debug("Deleting application for AppID %s", toHexString(appid))
 
         appid = [appid[2], appid[1], appid[0]]
 
@@ -753,8 +754,8 @@ class DESFire:
         if not self.is_authenticated:
             raise Exception("Not authenticated!")
 
-        self.logger.debug("curKey : " + to_human_readable_hex(curKey.get_key()))
-        self.logger.debug("newKey : " + to_human_readable_hex(newKey.get_key()))
+        self.logger.debug("curKey : " + toHexString(curKey.get_key()))
+        self.logger.debug("newKey : " + toHexString(newKey.get_key()))
 
         isSameKey = keyNo == self.lastAuthKeyNo
         # self.logger.debug('isSameKey : ' + str(isSameKey))

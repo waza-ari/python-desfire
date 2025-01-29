@@ -1,4 +1,4 @@
-from ..util import to_human_readable_hex
+from smartcard.util import toHexString
 
 
 class DESFireCardVersion:
@@ -31,6 +31,6 @@ class DESFireCardVersion:
         temp += f"Software Version: {self.softwareMajVersion}.{self.softwareMinVersion}\r\n"
         temp += f"EEPROM size:      {1 << (self.hardwareStorageSize - 1)} bytes\r\n"
         temp += f"Production :       week {self.cwProd:X}, year 20{self.yearProd:02X}\r\n"
-        temp += f"UID no  : {to_human_readable_hex(self.UID)}\r\n"
-        temp += f"Batch no: {to_human_readable_hex(self.batchNo)}\r\n"
+        temp += f"UID no  : {toHexString(self.UID)}\r\n"
+        temp += f"Batch no: {toHexString(self.batchNo)}\r\n"
         return temp
