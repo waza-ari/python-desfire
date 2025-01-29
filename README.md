@@ -1,53 +1,27 @@
 DESFire
 =========
 
-Desfire card library for Python
-
-Project still ongoing, use it with caution!
+Desfire card library for Python Project still ongoing, use it with caution!
 
 Features
 ========
 
 -   Compatible with all readers supported by pySCARD
-
 -   Pure python implementation
-
--   One of the few DESFire libraries that supports ALL (DES,2DES,3DES,AES)
-    authentication types
-
--   Enumeration of the card gives an overlook on how the card is structured
-
--   Functions implement:
-
-    -   authenticate
-    -   getApplicationIDs
-    -   getKeySetting
-    -   getCardVersion
-    -   formatCard
-    -   selectApplication
-    -   createApplication
-    -   deleteApplication
-    -   getFileIDs
-    -   getFileSettings
-    -   readFileData
-    -   writeFileData
-    -   deleteFile
-    -   createStdDataFile
-    -   getKeyVersion
-    -   changeKeySettings
-    -   changeKey
-
-Issues
-======
-
--   Can’t read data from certain file types
-
--   Some commands are missing (since there is no full documentation available)
 
 Author
 ======
 
-Patrick Weber
+Daniel Herrmann
+
+Documentation Sources
+=====================
+
+- EasyPay: https://github.com/nceruchalu/easypay/blob/master/mifare/mifare_crypto.c
+- Libfreefare: https://github.com/nfc-tools/libfreefare/blob/c2b0cfa4b9fb0e4be88604f00b7a2405618d5abc/libfreefare/mifare_desfire.c
+- Java Code: https://github.com/EsupPortail/esup-nfc-tag-server/blob/master/src/main/java/org/esupportail/nfctag/service/desfire/DESFireEV1Service.java#L1523
+- Funny PDF on Github: https://raw.githubusercontent.com/revk/DESFireAES/master/DESFire.pdf
+- DESFire Examples: https://hack.cert.pl/files/desfire-9f122c71e0057d4f747d2ee295b0f5f6eef8ac32.html
 
 Credits
 =======

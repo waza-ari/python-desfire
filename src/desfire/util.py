@@ -1,50 +1,97 @@
-"""Misc. utility functions."""
+import zlib
+from typing import Literal
 
-import crcmod.predefined
 from Crypto.Util.number import bytes_to_long, long_to_bytes
 
-
-def byte_array_to_human_readable_hex(bytes):
-    return "".join(f"{b:02X} " for b in bytes)
+from .enums import DESFireKeySettings
 
 
-def getInt(data, byteorder="big"):
+def to_human_readable_hex(data: list[int]) -> str:
+    """
+    Convert a list of commands to a human readable hex string.
+    """
+    return "".join(f"{b:02X} " for b in data)
+
+
+def get_int(data: int | str | bytearray | bytes, byteorder: Literal["little", "big"] = "big") -> int:
+    """
+    Convert a bytearray, hex string or int to an integer.
+    """
     if isinstance(data, int):
         return data
-    if isinstance(data, str):
-        data = bytearray.fromhex(data)
-    if isinstance(data, bytearray):
-        data = bytes(data)
-    return int.from_bytes(data, byteorder=byteorder)
+    elif isinstance(data, str):
+        return int.from_bytes(bytearray.fromhex(data))
+    elif isinstance(data, bytearray) or isinstance(data, bytes):
+        return int.from_bytes(data, byteorder=byteorder)
 
 
-def getList(data, byteSize=2, byteorder="big"):
+def get_list(
+    data: str | bytearray | int | bytes, byte_size: int = 2, byteorder: Literal["little", "big"] = "big"
+) -> list[int]:  #
+    """
+    Convert a bytearray, hex string or int to a list of integers.
+    """
     if isinstance(data, str):
         return list(bytearray.fromhex(data))
-    elif isinstance(data, bytearray):
+    elif isinstance(data, bytearray) or isinstance(data, bytes):
         return list(data)
     elif isinstance(data, int):
-        return list(data.to_bytes(byteSize, byteorder=byteorder))
-    elif isinstance(data, bytes):
-        return list(data)
+        return list(data.to_bytes(byte_size, byteorder=byteorder))
     return data
 
 
-def getBytes(data, byteSize=2):
+def get_bytes(data: str | bytearray | int | bytes, byte_size: int = 2) -> bytes:
+    """
+    Convert a bytearray, hex string or int to a bytes object.
+    """
     if isinstance(data, str):
         return bytes(bytearray.fromhex(data))
     elif isinstance(data, bytearray):
         return bytes(data)
     elif isinstance(data, int):
-        return data.to_bytes(byteSize, byteorder="big")
+        return data.to_bytes(byte_size, byteorder="big")
     return data
 
 
-def CRC32(data):
-    crc32_func = crcmod.predefined.mkCrcFun("jamcrc")
-    return crc32_func(bytes(data))
+def CRC32(data: list[int]) -> list[int]:
+    """
+    Calculates a JAMCRC checksum of the given data.
+
+    See https://stackoverflow.com/a/58861664/1627106
+    """
+    checksum = int("0b" + "1" * 32, 2) - zlib.crc32(bytes(data))
+    return get_list(checksum, byte_size=4, byteorder="little")
 
 
-def shift_bytes(bs, xor_lsb=0):
+def shift_bytes(bs: bytes, xor_lsb: int = 0) -> bytes:
+    """
+    Shifts the bytes to the left by one bit and xors the least significant bit with the given value.
+    """
     num = (bytes_to_long(bs) << 1) ^ xor_lsb
     return long_to_bytes(num, len(bs))[-len(bs) :]
+
+
+def xor_lists(list1: list[int], list2: list[int]) -> list[int]:
+    """
+    Takes two lists and performs a bytewise xor on those lists..
+    """
+    return [a ^ b for a, b in zip(list1, list2)]
+
+
+def calc_key_settings(mask):
+    if type(mask) is list:
+        # not parsing, but calculating
+        res = 0
+        for keysetting in mask:
+            res += keysetting.value
+        return res & 0xFF
+
+    a = 2147483648
+    result = []
+    while a >> 1:
+        a = a >> 1
+        masked = mask & a
+        if masked:
+            if DESFireKeySettings(masked):
+                result.append(DESFireKeySettings(masked))
+    return result

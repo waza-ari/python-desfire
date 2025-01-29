@@ -1,215 +1,96 @@
 import logging
 
-import pyDes
 from Crypto.Random import get_random_bytes
 from Crypto.Util.strxor import strxor
 
-from desfire.DESFire_DEF import (
-    DESFireCardVersion,
-    DESFireCommand,
-    DESFireFileSettings,
-    DESFireKey,
-    DESFireKeyType,
-    DESFire_STATUS,
-    calc_key_settings,
-)
-from desfire.exceptions import DESFireAuthException, DESFireCommunicationError
-from desfire.pcsc import PCSCDevice
-
-from .util import CRC32, byte_array_to_human_readable_hex, getInt, getList
+from .enums import DESFireCommand, DESFireCommunicationMode, DESFireKeyType, DESFireStatus
+from .exceptions import DESFireAuthException, DESFireCommunicationError, DESFireException
+from .file.settings import DESFireFileSettings
+from .key.card_version import DESFireCardVersion
+from .key.key import DESFireKey
+from .pcsc import Device
+from .util import CRC32, calc_key_settings, get_int, get_list, to_human_readable_hex
 
 
 class DESFire:
-    def __init__(self, device: PCSCDevice, logger: logging.Logger | None = None):
-        self.isAuthenticated = False
-        self.sessionKey = None
-        self.cmac = None
-        self.MaxFrameSize = 60
+    """
+    This is the main class of this library, facilitating communication with the DESFire card.
+    """
 
+    is_authenticated: bool = False
+    session_key: DESFireKey | None = None
+    max_frame_size: int = 60
+    last_selected_application: int | None = None
+
+    def __init__(self, device: Device, logger: logging.Logger | None = None):
+        """
+        Initializes a new DESfire object which can be used to interact with the card.
+        Requires an initialized PCSC device object, refer to the examples for details and uage examples.
+        """
         self.device = device
 
-        self.lastSelectedApplication = None
+        # Set up logging if not externally provided
         if logger:
             self.logger = logger
         else:
             self.logger = logging.getLogger(__name__)
 
-    def decrypt_response(self, response, private_key=b"\00" * 16):
-        """Decrypt the autheticated session answer from the card.
-        .. warn ::
-            Does not check CMAC.
+    #
+    # Internal Methods
+    #
+
+    def _communicate(self, apdu_cmd: list[int], native: bool = True, af_passthrough: bool = False):
         """
+        Communicate with a NFC tag. Send in outgoing request and wait for a card reply.
 
-        initial_value = b"\00" * 8
-        k = pyDes.triple_des(
-            bytes(private_key),
-            pyDes.CBC,
-            initial_value,
-            pad=None,
-            padmode=pyDes.PAD_NORMAL,
-        )
-
-        decrypted = list(k.decrypt(bytes(response)))  # ??
-        import pdb
-
-        pdb.set_trace()
-
-    def authenticate(self, key_id: int, key: DESFireKey, challenge: str | None = None):
-        """
-        Authenticate against the currently selected application with key_id.
-        Authentication is NEVER needed to call this function.
-
-        :param key_id: Key number
-        :type key_id: int
-        :param key: The key used for authentication
-        :type key: DESFireKey
-        :param challenge: The challenge supplied by the reader to the card on the challenge-response authentication.
-                            It will determine half of the session Key bytes (optional)
-        :type challenge: str | None
-        """
-
-        self.logger.debug("Authenticating")
-        self.isAuthenticated = False
-        cmd = None
-        keyType = key.GetKeyType()
-        if keyType == DESFireKeyType.DF_KEY_AES:
-            self.logger.debug("Authenticating with AES key")
-            cmd = DESFireCommand.DFEV1_INS_AUTHENTICATE_AES.value
-            params = [key_id]
-        elif keyType == DESFireKeyType.DF_KEY_2K3DES or keyType == DESFireKeyType.DF_KEY_3K3DES:
-            self.logger.debug("Authenticating with 3DES key")
-            cmd = DESFireCommand.DFEV1_INS_AUTHENTICATE_ISO.value
-            params = [key_id]
-        else:
-            raise Exception("Invalid key type!")
-
-        raw_data = self.communicate(
-            self.command(cmd, params),
-            f"Authenticating key {key_id:02X}",
-            True,
-            allow_continue_fallthrough=True,
-        )
-        RndB_enc = raw_data
-        self.logger.debug("Random B (enc):" + byte_array_to_human_readable_hex(RndB_enc))
-        if keyType == DESFireKeyType.DF_KEY_3K3DES or keyType == DESFireKeyType.DF_KEY_AES:
-            if len(RndB_enc) != 16:
-                raise DESFireAuthException(
-                    "Card expects a different key type. "
-                    "(enc B size is less than the blocksize of the key you specified)"
-                )
-
-        key.CiperInit()
-        RndB = key.Decrypt(RndB_enc)
-        self.logger.debug("Random B (dec): " + byte_array_to_human_readable_hex(RndB))
-        RndB_rot = RndB[1:] + [RndB[0]]
-        self.logger.debug("Random B (dec, rot): " + byte_array_to_human_readable_hex(RndB_rot))
-
-        if challenge is not None:
-            RndA = bytes(bytearray.fromhex(challenge))
-        else:
-            RndA = get_random_bytes(len(RndB))
-        self.logger.debug("Random A: " + byte_array_to_human_readable_hex(RndA))
-        RndAB = list(RndA) + RndB_rot
-        self.logger.debug("Random AB: " + byte_array_to_human_readable_hex(RndAB))
-        RndAB_enc = key.Encrypt(RndAB)
-        self.logger.debug("Random AB (enc): " + byte_array_to_human_readable_hex(RndAB_enc))
-
-        params = RndAB_enc
-        cmd = DESFireCommand.DF_INS_ADDITIONAL_FRAME.value
-        raw_data = self.communicate(
-            self.command(cmd, params),
-            f"Authenticating random {key_id:02X}",
-            True,
-            allow_continue_fallthrough=True,
-        )
-        # raw_data = hexstr2bytelist('91 3C 6D ED 84 22 1C 41')
-        RndA_enc = raw_data
-        self.logger.debug("Random A (enc): " + byte_array_to_human_readable_hex(RndA_enc))
-        RndA_dec = key.Decrypt(RndA_enc)
-        self.logger.debug("Random A (dec): " + byte_array_to_human_readable_hex(RndA_dec))
-        RndA_dec_rot = RndA_dec[-1:] + RndA_dec[0:-1]
-        self.logger.debug("Random A (dec, rot): " + byte_array_to_human_readable_hex(RndA_dec_rot))
-
-        if bytes(RndA) != bytes(RndA_dec_rot):
-            raise Exception("Authentication FAILED!")
-
-        self.logger.debug("Authentication succsess!")
-        self.isAuthenticated = True
-        self.lastAuthKeyNo = key_id
-
-        self.logger.debug("Calculating Session key")
-        RndA = list(RndA)
-        sessionKeyBytes = RndA[:4]
-        sessionKeyBytes += RndB[:4]
-
-        if key.keySize > 8:
-            if keyType == DESFireKeyType.DF_KEY_2K3DES:
-                sessionKeyBytes += RndA[4:8]
-                sessionKeyBytes += RndB[4:8]
-            elif keyType == DESFireKeyType.DF_KEY_3K3DES:
-                sessionKeyBytes += RndA[6:10]
-                sessionKeyBytes += RndB[6:10]
-                sessionKeyBytes += RndA[12:16]
-                sessionKeyBytes += RndB[12:16]
-            elif keyType == DESFireKeyType.DF_KEY_AES:
-                sessionKeyBytes += RndA[12:16]
-                sessionKeyBytes += RndB[12:16]
-
-        if keyType == DESFireKeyType.DF_KEY_2K3DES or keyType == DESFireKeyType.DF_KEY_3K3DES:
-            sessionKeyBytes = [(a & 0b11111110) for a in sessionKeyBytes]
-        ## now we have the session key, so we reinitialize the crypto!!!
-        key.GenerateCmac(sessionKeyBytes)
-        self.sessionKey = key
-        return self.sessionKey
-
-    def _communicate(self, apdu_cmd, description, nativ=False, allow_continue_fallthrough=False):
-        """Communicate with a NFC tag.
-        Send in outgoing request and waith for a card reply.
-        TODO: Handle additional framing via 0xaf
         :param apdu_cmd: Outgoing APDU command as array of bytes
-        :param description: Command description for logging purposes
-        :param allow_continue_fallthrough: If True 0xAF response (incoming more data, need mode data) is instantly returned to the called instead of trying to handle it internally
-        :raise: :py:class:`desfire.protocol.DESFireCommunicationError` on any error
-        :return: tuple(APDU response as list of bytes, bool if additional frames are inbound)
+        :type apdu_cmd: bytearray
+        :param native: True indicates that DESfire native commands are used, otherwise ISO 7816 APDUs are used
+        :type native: bool
+        :param af_passthrough: If true, a 0xAF response (indicating more incoming data) is instantly
+            returned to the callee instead of trying to handle it internally
+        :type af_passthrough: bool
         """
 
-        result = []
-        additional_framing_needed = True
+        result: list[int] = []
+        additional_data: bool = True
+        # current_command: bytearray = apdu_cmd
 
-        # TODO: Clean this up so readgwrite implementations have similar mechanisms and all continue is handled internally
-        while additional_framing_needed:
-            self.logger.debug(
-                "Running APDU command %s, sending: %s",
-                description,
-                byte_array_to_human_readable_hex(apdu_cmd),
-            )
-
+        # Loop until all data is received
+        while additional_data:
+            # Send the APDU command to the card
+            self.logger.debug("Running APDU command, sending: %s", to_human_readable_hex(apdu_cmd))
             resp = self.device.transceive(apdu_cmd)
-            self.logger.debug("Received APDU response: %s", byte_array_to_human_readable_hex(resp))
+            self.logger.debug("Received APDU response: %s", to_human_readable_hex(resp))
 
-            if not nativ:
+            # DESfire native commands are used
+            if native:
+                status = resp[0]
+                # Check for known error interpretation
+                if status == 0xAF:
+                    if af_passthrough:
+                        additional_data = False
+                    else:
+                        # Need to loop more cycles to fill in receive buffer
+                        additional_data = True
+                        apdu_cmd = self._command(0xAF)  # Continue
+                elif status != 0x00:
+                    try:
+                        error_description = DESFireStatus(status).name
+                    except ValueError:
+                        error_description = "Unknown error"
+                    raise DESFireCommunicationError(error_description, status)
+                else:
+                    additional_data = False
+            else:  # If commands are wrapped in ISO 7816-4 APDU Frames, SW1 must be 0x91
                 if resp[-2] != 0x91:
                     raise DESFireCommunicationError(
-                        f"Received invalid response for command: {description}",
-                        resp[-2:],
+                        "Received invalid response for command using native communication", resp[-2:]
                     )
-                # Possible status words: https:g/github.com/jekkos/android-hce-desfire/blob/master/hceappletdesfire/src/main/java/net/jpeelaer/hce/desfire/DesfireStatusWord.java
+                # Possible status words:
+                # https://github.com/jekkos/android-hce-desfire/blob/master/hceappletdesfire/src/main/java/net/jpeelaer/hce/desfire/DesfireStatusWord.java
                 status = resp[-1]
                 unframed = list(resp[0:-2])
-
-            status = resp[0]
-            # Check for known error interpretation
-            if status == 0xAF:
-                if allow_continue_fallthrough:
-                    additional_framing_needed = False
-                else:
-                    # Need to loop more cycles to fill in receive buffer
-                    additional_framing_needed = True
-                    apdu_cmd = self.command(0xAF)  # Continue
-            elif status != 0x00:
-                raise DESFireCommunicationError(DESFire_STATUS(status).name, status)
-            else:
-                additional_framing_needed = False
 
             # This will un-memoryview this object as there seems to be some pyjnius
             # bug getting this corrupted down along the line
@@ -218,141 +99,509 @@ class DESFire:
 
         return result
 
-    def communicate(
-        self,
-        apdu_cmd,
-        description,
-        nativ=False,
-        allow_continue_fallthrough=False,
-        isEncryptedComm=False,
-        withTXCMAC=False,
-        withCRC=False,
-        withRXCMAC=True,
-        encryptBegin=1,
-    ):
+    @classmethod
+    def _add_padding(cls, data: list[int], blocksize: int = 16) -> list[int]:
         """
-        cmd : the DESFire instruction byte (in hex format)
-        data: optional parameters (in hex format)
-        isEncryptedComm: bool indicates if the communication should be sent encrypted
-        withTXCMAC: bool indicates if CMAC should be calculated
-        autorecieve: bool indicates if the receptions should implement paging in case there is more deata to be sent by the card back then the max message size
+        Adds padding to the data to make it a multiple of the cipher block size
+
+        Padding is 0x80 once followed by 0x00 bytes until the block size is reached.
+
+        @See https://stackoverflow.com/a/23704425/1627106
+        Moreover, be careful about the way you have to do the padding.
+        The DESFire EV1 datasheet is ambiguous on that. While the section
+        on AES encryption suggests that CMAC padding should always be used
+        together with AES, the section on padding states that commands with
+        known data length should be padded with all zeros, while commands with
+        unknown data length should be padded with 0x80 followed by zeros.
+        Finally the documentation on the write command explicitly states
+        that the write command should be padded with all zeros for encryption
+        (and that's what you are supposed to do).
+        """
+        if len(data) % blocksize == 0:
+            return data
+        padding = blocksize - (len(data) % blocksize)
+        return data + [0x80] + [0x00] * (padding - 1)
+
+    @classmethod
+    def _command(cls, command: int, parameters: list[int] | None = None) -> list[int]:
+        """
+        Concatenate the command and parameters into a single list that can be sent to the card.
+        """
+        r_val = [command]
+
+        if parameters:
+            r_val += parameters
+
+        return r_val
+
+    def _preprocess(self, apdu_cmd: list[int], tx_mode: DESFireCommunicationMode) -> list[int]:
+        """
+        Preprocess the command before sending it to the card.
+        This includes adding the padding and the CRC if needed.
         """
 
-        # sanity check
-        if withTXCMAC or isEncryptedComm:
-            if not self.isAuthenticated:
-                raise Exception("Cant perform CMAC calc without authentication!")
+        # If not authenticated, we don't need to do anything
+        if not self.is_authenticated:
+            return apdu_cmd
 
-        # encrypt the communication
-        if isEncryptedComm:
-            apdu_cmd = self.sessionKey.EncryptMsg(apdu_cmd, withCRC, encryptBegin)
+        assert self.session_key is not None
 
-        # communication with the card is not encrypted, but CMAC might need to be calculated
-        # calculate cmac for outgoing message
-        if withTXCMAC:
-            TXCMAC = self.sessionKey.CalculateCmac(apdu_cmd)
-            self.logger.debug("TXCMAC      : " + byte_array_to_human_readable_hex(TXCMAC))
-        response = self._communicate(apdu_cmd, description, nativ, allow_continue_fallthrough)
+        # Preprocess the command
+        if tx_mode == DESFireCommunicationMode.PLAIN:
+            # We don't do anything with the CMAC, but it does update the IV for future crypto operations
+            self.session_key.calculate_cmac(apdu_cmd)
+            return apdu_cmd
+        elif tx_mode == DESFireCommunicationMode.CMAC:
+            # Calculate the CMAC and append it to the command
+            tx_cmac = self.session_key.calculate_cmac(apdu_cmd)
+            # Only the last 8 bytes of the CMAC are used
+            return apdu_cmd + tx_cmac[-8:]
+        elif tx_mode == DESFireCommunicationMode.ENCRYPTED:
+            # Encrypt the command
+            return self.session_key.encrypt_msg(apdu_cmd, with_crc=True)
+        else:
+            raise Exception("Invalid communication mode")
 
-        if self.isAuthenticated and len(response) >= 8 and withRXCMAC:
-            # after authentication, there is always an 8 bytes long CMAC coming from the card,
-            # to ensure message integrity
-            # todo: verify CMAC
-            if len(response) == 8:
-                # if (
-                #     self.sessionKey.keyType == DESFireKeyType.DF_KEY_3DES
-                #     or self.sessionKey.keyType == DESFireKeyType.DF_KEY_2K3DES
-                #     or self.sessionKey.keyType == DESFireKeyType.DF_KEY_3K3DES
-                # ):
-                RXCMAC = response
-                response = []
-                # else:
-                #    #there is no CMAC
-                #    return response
-            else:
-                RXCMAC = response[-8:]
-                response = response[:-8]
+    def _postprocess(self, response: list[int], rx_mode: DESFireCommunicationMode) -> list[int]:
+        """
+        Postprocess the response from the card.
+        """
 
-            cmacdata = response + [0x00]
-            RXCMAC_CALC = self.sessionKey.CalculateCmac(cmacdata)
-            self.logger.debug("RXCMAC      : " + byte_array_to_human_readable_hex(RXCMAC))
-            self.logger.debug("RXCMAC_CALC: " + byte_array_to_human_readable_hex(RXCMAC_CALC))
-            self.cmac = RXCMAC_CALC
-            if bytes(RXCMAC) != bytes(RXCMAC_CALC[0 : len(RXCMAC)]):
-                raise Exception("RXCMAC not equal")
+        # PLAIN response is only possible if we're not authenticated
+        if rx_mode == DESFireCommunicationMode.PLAIN:
+            return response
+        # CMAC response is only possible if we're authenticated
+        elif rx_mode == DESFireCommunicationMode.CMAC:
+            """
+            The CMAC is calculated over the payload of the response (i.e after the status byte) and then the status byte
+            appended to the end. If the response is multiple parts then the payload of these parts are concatenated
+            (without the AF status byte) and the final status byte added to the end.
+            """
+            # Check if the CMAC is correct
+            assert self.session_key is not None
+            # Calculate the CMAC of the data
+            cmac_data = response[:-8] + [0x00]
+            self.logger.debug("Calculating CMAC for data: " + to_human_readable_hex(cmac_data))
+            calculated_cmac = self.session_key.calculate_cmac(cmac_data)[:8]
+            self.logger.debug("RXCMAC      : " + to_human_readable_hex(response[-8:]))
+            self.logger.debug("RXCMAC_CALC : " + to_human_readable_hex(calculated_cmac))
+            if bytes(response[-8:]) != bytes(calculated_cmac):
+                raise Exception("CMAC verification failed!")
+            return response[:-8]
+        # ENCRYPTED response is only possible if we're authenticated
+        elif rx_mode == DESFireCommunicationMode.ENCRYPTED:
+            """
+            The response is encrypted using the session key. The response is padded with 0x80 followed by 0x00 bytes
+            until the end of the block. The IV is updated with the last block of the encrypted data.
+            """
+            assert self.session_key is not None
+            assert self.session_key.cipher_block_size is not None
+
+            # Decrypt the response
+            padded_response = self._add_padding(response)
+            self.logger.debug("Padded response: " + to_human_readable_hex(padded_response))
+            decrypted_response = self.session_key.decrypt(padded_response)
+            self.logger.debug("Decrypted response: " + to_human_readable_hex(response))
+
+            # Update IV to the last block of the encrypted data
+            self.session_key.set_iv(response[-self.session_key.cipher_block_size :])
+
+            # Remove all null bytes from the end
+            while decrypted_response[-1] == 0x00:
+                decrypted_response = decrypted_response[:-1]
+
+            # Check if the CRC is correct - Status byte is appended to the data before CRC calculation
+            crc_bytes = (
+                4 if self.session_key.key_type in [DESFireKeyType.DF_KEY_AES, DESFireKeyType.DF_KEY_3K3DES] else 2
+            )
+            received_crc = decrypted_response[-crc_bytes:]
+            self.logger.debug("Received CRC  : " + to_human_readable_hex(received_crc))
+            calculated_crc = CRC32(decrypted_response[:-crc_bytes] + [0x00])
+            self.logger.debug("Calculated CRC: " + to_human_readable_hex(calculated_crc))
+
+            if bytes(received_crc) != bytes(calculated_crc):
+                raise Exception("CRC verification failed!")
+
+            # Remove the CRC from the response
+            response = decrypted_response[:-crc_bytes]
 
         return response
 
+    def _transceive(
+        self,
+        apdu_cmd: list[int],
+        tx_mode: DESFireCommunicationMode,
+        rx_mode: DESFireCommunicationMode,
+        af_passthrough: bool = False,
+    ) -> list[int]:
+        """
+        Communicate with the card. This is the main function that sends the APDU command and performs
+        neccessary pre- and postprocessing of the data. It also handles the CMAC calculation and
+        encryption/decryption of the communication if needed.
+        """
+
+        # Check for existing of session key if needed
+        if tx_mode != DESFireCommunicationMode.PLAIN or rx_mode != DESFireCommunicationMode.PLAIN:
+            if not self.is_authenticated:
+                raise Exception("Cant perform crypto operations without authentication!")
+
+        # Preprocess the command, includes CMAC calculation and encryption
+        apdu_cmd = self._preprocess(apdu_cmd, tx_mode)
+
+        # Send the command to the card, note that this command will raise an exception if the card returns an error
+        response = self._communicate(apdu_cmd, af_passthrough=af_passthrough)
+
+        # Postprocess the response
+        return self._postprocess(response, rx_mode)
+
+    #
+    # Public Methodds
+    #
+
     @classmethod
-    def wrap_command(cls, command, parameters=None):
-        """Wrap a command to native DES framing.
+    def wrap_command(cls, command: int, parameters: list[int] | None = None) -> list[int]:
+        """
+        Wrap a command to native DES framing.
+
         :param command: Command byte
         :param parameters: Command parameters as list of bytes
-        https:g/github.com/greenbird/workshops/blob/master/mobile/Android/Near%20Field%20Communications/HelloWorldNFC%20Desfire%20Base/src/com/desfire/nfc/DesfireReader.java#L129
         """
         if parameters:
             return [0x90, command, 0x00, 0x00, len(parameters)] + parameters + [0x00]
         else:
             return [0x90, command, 0x00, 0x00, 0x00]
 
-    @classmethod
-    def command(cls, command, parameters=None):
-        if parameters:
-            l = [command]
-            l = l + parameters
-            return l
-        else:
-            return [command]
+    # Authentication
 
-    def getApplicationIDs(self):
-        """Lists all application on the card
-        Authentication is NOT needed to call this function
-        Args:
-                None
-        Returns:
-                list: A list of application IDs, in a 4 byte hex form
+    def authenticate(self, key_id: int, key: DESFireKey, challenge: str | bytearray | int | bytes | None = None):
         """
-        self.logger.debug("GetApplicationIDs")
-        cmd = DESFireCommand.DF_INS_GET_APPLICATION_IDS.value
-        raw_data = self.communicate([cmd], "Get Application IDs", nativ=True, withTXCMAC=self.isAuthenticated)
+        Authenticate against the currently selected application with key_id.
+        Authentication is NEVER needed to call this function.
+
+        :param key_id: Key ID to authenticate with
+        :type key_id: int
+        :param key: The DESFireKey instance used for authentication
+        :type key: DESFireKey
+        :param challenge: The challenge supplied by the reader to the card on the challenge-response authentication.
+            It will determine half of the session Key bytes (optional)
+        :type challenge: str | None
+        """
+        assert key.cipher_block_size is not None
+        self.logger.debug("Authenticating")
+        self.is_authenticated = False
+
+        # Determine the authentication command based on the key type
+        if key.key_type == DESFireKeyType.DF_KEY_AES:
+            self.logger.debug("Authenticating with AES key")
+            cmd = DESFireCommand.DFEV1_INS_AUTHENTICATE_AES.value
+            params = [key_id]
+        elif key.key_type == DESFireKeyType.DF_KEY_2K3DES or key.key_type == DESFireKeyType.DF_KEY_3K3DES:
+            self.logger.debug("Authenticating with 3DES key")
+            cmd = DESFireCommand.DFEV1_INS_AUTHENTICATE_ISO.value
+            params = [key_id]
+        else:
+            raise Exception("Invalid key type!")
+
+        # First part of three way handshake - Initial authentication and retrieve RND_B from card
+        # AF_Passthrough is required as the card will respond with 0xAF as challenge response
+        RndB_enc = self._transceive(
+            self._command(cmd, params),
+            DESFireCommunicationMode.PLAIN,
+            DESFireCommunicationMode.PLAIN,
+            af_passthrough=True,
+        )
+        self.logger.debug("Random B (enc):" + to_human_readable_hex(RndB_enc))
+
+        # Check if the key type is correct
+        if (key.key_type == DESFireKeyType.DF_KEY_3K3DES or key.key_type == DESFireKeyType.DF_KEY_AES) and len(
+            RndB_enc
+        ) != 16:
+            raise DESFireAuthException(
+                "Card expects a different key type. (enc B size is less than the blocksize of the key you specified)"
+            )
+
+        # Reinitalize the cipher object of the key
+        key.cipher_init()
+
+        # Decrypt the RndB using the provided master key
+        RndB = key.decrypt(RndB_enc)
+        self.logger.debug("Random B (dec): " + to_human_readable_hex(RndB))
+
+        # Rotate RndB to the left by one byte
+        RndB_rot = RndB[1:] + [RndB[0]]
+        self.logger.debug("Random B (dec, rot): " + to_human_readable_hex(RndB_rot))
+
+        # Challenge can be either provided externally, or generated randomly
+        if challenge is not None:
+            RndA = get_list(challenge)
+        else:
+            RndA = get_list(get_random_bytes(len(RndB)))
+        self.logger.debug("Random A: " + to_human_readable_hex(RndA))
+
+        # Concatenate RndA and RndB_rot and encrypt it with the master key
+        RndAB = list(RndA) + RndB_rot
+        self.logger.debug("Random AB: " + to_human_readable_hex(RndAB))
+        key.set_iv(RndB_enc)
+        RndAB_enc = key.encrypt(RndAB)
+        self.logger.debug("Random AB (enc): " + to_human_readable_hex(RndAB_enc))
+
+        # Send the encrypted RndAB to the card, it should reply with a positive result
+        params = RndAB_enc
+        cmd = DESFireCommand.DF_INS_ADDITIONAL_FRAME.value
+        RndA_enc = self._transceive(
+            self._command(cmd, params), DESFireCommunicationMode.PLAIN, DESFireCommunicationMode.PLAIN
+        )
+
+        # Verify that the response matches our original challenge
+        self.logger.debug("Random A (enc): " + to_human_readable_hex(RndA_enc))
+        key.set_iv(RndAB_enc[-key.cipher_block_size :])
+        RndA_dec = key.decrypt(RndA_enc)
+        self.logger.debug("Random A (dec): " + to_human_readable_hex(RndA_dec))
+        RndA_dec_rot = RndA_dec[-1:] + RndA_dec[0:-1]
+        self.logger.debug("Random A (dec, rot): " + to_human_readable_hex(RndA_dec_rot))
+
+        if bytes(RndA) != bytes(RndA_dec_rot):
+            raise Exception("Authentication FAILED!")
+
+        self.logger.debug("Authentication success!")
+        self.is_authenticated = True
+        self.lastAuthKeyNo = key_id  # TODO: Verify if this is needed
+
+        self.logger.debug("Calculating Session key")
+        session_key_bytes = RndA[:4]
+        session_key_bytes += RndB[:4]
+        if key.key_size > 8:
+            if key.key_type == DESFireKeyType.DF_KEY_2K3DES:
+                session_key_bytes += RndA[4:8]
+                session_key_bytes += RndB[4:8]
+            elif key.key_type == DESFireKeyType.DF_KEY_3K3DES:
+                session_key_bytes += RndA[6:10]
+                session_key_bytes += RndB[6:10]
+                session_key_bytes += RndA[12:16]
+                session_key_bytes += RndB[12:16]
+            elif key.key_type == DESFireKeyType.DF_KEY_AES:
+                session_key_bytes += RndA[12:16]
+                session_key_bytes += RndB[12:16]
+
+        if key.key_type == DESFireKeyType.DF_KEY_2K3DES or key.key_type == DESFireKeyType.DF_KEY_3K3DES:
+            session_key_bytes = [(a & 0b11111110) for a in session_key_bytes]
+
+        ## now we have the session key, so we reinitialize the crypto part of the key
+        key.set_key(bytes(session_key_bytes))
+        key.generate_cmac()
+        key.clear_iv()
+
+        # Store the session key
+        self.session_key = key
+
+    #
+    ## Card related
+    #
+
+    def get_real_uid(self) -> list[int]:
+        """
+        Gets the real UID of the card. This function requires authentication, any key can be used.
+        """
+        self.logger.debug("Getting real card UID")
+
+        if not self.is_authenticated:
+            raise Exception("Not authenticated!")
+
+        cmd = DESFireCommand.DFEV1_INS_GET_CARD_UID.value
+        return self._transceive(self._command(cmd), DESFireCommunicationMode.PLAIN, DESFireCommunicationMode.ENCRYPTED)
+
+    def get_card_version(self):
+        """
+        Gets card version info blob
+        Version info contains the UID, Batch number, production week, production year, .... of the card
+        Authentication is NOT needed to call this function
+        BEWARE: DESFire card has a security feature called "Random UID" which means that without authentication it will
+            give you a random UID each time you call this function!
+        """
+        self.logger.debug("Getting card version info")
+        raw_data = self._transceive(
+            self._command(DESFireCommand.DF_INS_GET_VERSION.value),
+            DESFireCommunicationMode.PLAIN,
+            DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
+        )
+        return DESFireCardVersion(raw_data)
+
+    #
+    ## Key Related
+    #
+
+    def get_key_setting(self) -> DESFireKey:
+        """
+        Gets the key settings for the currently selected application.
+
+        CMAC is used for communication if authenticated, otherwise plain communication is used.
+        """
+        resp = self._transceive(
+            self._command(DESFireCommand.DF_INS_GET_KEY_SETTINGS.value),
+            DESFireCommunicationMode.PLAIN,
+            DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
+        )
+        ret = DESFireKey()
+        ret.set_key_settings(resp[1] & 0x0F, DESFireKeyType(resp[1] & 0xF0), resp[0] & 0x07)
+        return ret
+
+    def get_key_version(self, key_number: int) -> list[int]:
+        """
+        Gets the key version for the key identified by keyno.
+        SelectApplication needs to be called first, otherwise it's getting the settings for the Master Key
+        Authentication is ALWAYS needed to call this function.
+        """
+        self.logger.debug(f"Getting key version for keyid {key_number:x}")
+
+        params = get_list(key_number, 1, "big")
+        cmd = DESFireCommand.DF_INS_GET_KEY_VERSION.value
+        raw_data = self._transceive(
+            self._command(cmd, params),
+            DESFireCommunicationMode.PLAIN,
+            DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
+        )
+        return raw_data
+
+    #
+    ## Application related
+    #
+
+    def get_application_ids(self) -> list[list[int]]:
+        """
+        Lists all application on the card. Authentication is NOT needed to call this function
+        Returns a list of application IDs, in a 4 byte hex form
+        """
+        self.logger.debug("Fetching application IDs")
+
+        raw_data = self._transceive(
+            self._command(DESFireCommand.DF_INS_GET_APPLICATION_IDS.value),
+            DESFireCommunicationMode.PLAIN,
+            DESFireCommunicationMode.PLAIN,
+        )
 
         pointer = 0
         apps = []
         while pointer < len(raw_data):
             appid = [raw_data[pointer + 2]] + [raw_data[pointer + 1]] + [raw_data[pointer]]
-            self.logger.debug("Reading %s", byte_array_to_human_readable_hex(appid))
+            self.logger.debug("Reading %s", to_human_readable_hex(appid))
             apps.append(appid)
             pointer += 3
 
         return apps
 
-    def getKeySetting(self):
-        ret = DESFireKey()
-        # apdu_command = self.command(DESFire_DEF.DF_INS_GET_KEY_SETTINGS.value)
-        resp = self.communicate(
-            [DESFireCommand.DF_INS_GET_KEY_SETTINGS.value],
-            "get key settings",
-            nativ=True,
-            withTXCMAC=self.isAuthenticated,
+    def select_application(self, appid: int):
+        """
+        Choose application on a card on which all the following commands will apply.
+        Authentication is NOT ALWAYS needed to call this function. Depends on the application settings.
+        """
+        parsed_appid = get_list(appid, 3, "big")
+        self.logger.debug(f"Selecting application with AppID {to_human_readable_hex(parsed_appid)}")
+
+        # TODO: Check why this is reversed after parsing the list big endian above
+        parameters = [parsed_appid[2], parsed_appid[1], parsed_appid[0]]
+
+        # If we are authenticated, we use CMAC for communication, otherwise we use plain communication
+        communication_mode = DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN
+        self._transceive(
+            self._command(DESFireCommand.DF_INS_SELECT_APPLICATION.value, parameters),
+            communication_mode,
+            communication_mode,
         )
-        ret.setKeySettings(resp[1] & 0x0F, DESFireKeyType(resp[1] & 0xF0), resp[0] & 0x07)
+
+        # if new application is selected, authentication needs to be carried out again
+        self.is_authenticated = False
+        self.last_selected_application = appid
+
+    #
+    ## File related
+    #
+
+    def get_file_ids(self):
+        """
+        Lists all files belonging to the application currently selected.
+        SelectApplication needs to be called first
+        Authentication is NOT ALWAYS needed to call this function. Depends on the application/card settings.
+        """
+
+        if not self.last_selected_application:
+            raise DESFireException("No application selected, call select_application first")
+
+        self.logger.debug("Enumerating all files for the selected application")
+        file_ids = []
+
+        raw_data = self._transceive(
+            self._command(DESFireCommand.DF_INS_GET_FILE_IDS.value),
+            tx_mode=DESFireCommunicationMode.PLAIN,
+            rx_mode=DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
+        )
+
+        # Parse the raw data
+        if len(raw_data) == 0:
+            self.logger.debug("No files found")
+        else:
+            for byte in raw_data:
+                file_ids.append(byte)
+            self.logger.debug(f"File ids: {''.join([to_human_readable_hex(bytearray([id])) for id in file_ids])}")
+
+        return file_ids
+
+    def get_file_settings(self, file_id: int) -> DESFireFileSettings:
+        """
+        Gets file settings for the File identified by file_id.
+        SelectApplication needs to be called first.
+        Authentication is NOT ALWAYS needed to call this function. Depends on the application/card settings.
+        """
+
+        if not self.last_selected_application:
+            raise DESFireException("No application selected, call select_application first")
+
+        file_id_bytes = get_list(file_id, 1, "big")
+        self.logger.debug(f"Getting file settings for file {to_human_readable_hex(file_id_bytes)}")
+
+        # Get the file settings
+        raw_data = raw_data = self._transceive(
+            self._command(DESFireCommand.DF_INS_GET_FILE_SETTINGS.value, file_id_bytes),
+            DESFireCommunicationMode.PLAIN,
+            DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
+        )
+
+        # Parse the raw data
+        file_settings = DESFireFileSettings()
+        file_settings.parse(raw_data)
+        return file_settings
+
+    def read_file_data(self, file_id: int, file_settings: DESFireFileSettings):
+        """
+        Read file data for file_id
+        SelectApplication needs to be called first
+        Authentication is NOT ALWAYS needed to call this function. Depends on the application/card settings.
+        """
+
+        if not self.last_selected_application:
+            raise DESFireException("No application selected, call select_application first")
+
+        assert file_settings.encryption is not None
+
+        file_id_bytes = get_list(file_id, 1)
+        length = get_int(file_settings.FileSize, "big")
+        ioffset = 0
+        ret = []
+
+        while length > 0:
+            count = min(length, 48)
+            params = file_id_bytes + get_list(ioffset, 3, "little") + get_list(count, 3, "little")
+            ret += self._transceive(
+                self._command(DESFireCommand.DF_INS_READ_DATA.value, params),
+                DESFireCommunicationMode.PLAIN,
+                file_settings.encryption,
+            )
+            ioffset += count
+            length -= count
+
         return ret
 
-    def getCardVersion(self):
-        """Gets card version info blob
-        Version info contains the UID, Batch number, production week, production year, .... of the card
-        Authentication is NOT needed to call this function
-        BEWARE: DESFire card has a security feature called "Random UID" which means that without authentication it will
-            give you a random UID each time you call this function!
-        Args:
-                None
-        Returns:
-                DESFireCardVersion: Object containing all card version info parsed
-        """
-        self.logger.debug("Getting card version info")
-        cmd = DESFireCommand.DF_INS_GET_VERSION.value
-        raw_data = self.communicate([cmd], "GetCardVersion", nativ=True, withTXCMAC=self.isAuthenticated)
-        return DESFireCardVersion(raw_data)
+    ###################################
+    ### TO BE DONE
 
     def formatCard(self):
         """
@@ -366,28 +615,9 @@ class DESFire:
         """
         self.logger.debug("Formatting card")
         cmd = DESFireCommand.DF_INS_FORMAT_PICC.value
-        self.communicate([cmd], "Format Card", nativ=True, withTXCMAC=self.isAuthenticated)
+        self.communicate([cmd], with_tx_cmac=self.is_authenticated)
 
     ###### Application related
-
-    def selectApplication(self, appid):
-        """Choose application on a card on which all the following commands will apply.
-        Authentication is NOT ALWAYS needed to call this function. Depends on the application settings.
-        Args:
-            appid (int): The application ID of the app to be selected
-        Returns:
-            None
-        """
-        appid = getList(appid, 3, "big")
-        self.logger.debug(f"Selecting application with AppID {byte_array_to_human_readable_hex(appid)}")
-
-        parameters = [appid[2], appid[1], appid[0]]
-
-        cmd = DESFireCommand.DF_INS_SELECT_APPLICATION.value
-        self.communicate(self.command(cmd, parameters), "select Application", nativ=True)
-        # if new application is selected, authentication needs to be carried out again
-        self.isAuthenticated = False
-        self.lastSelectedApplication = appid
 
     def createApplication(self, appid, keysettings, keycount, type):
         """
@@ -407,17 +637,15 @@ class DESFire:
         :type type:
         """
 
-        appid = getList(appid, 3, "big")
-        self.logger.debug(f"Creating application with appid: {byte_array_to_human_readable_hex(appid)}, ")
+        appid = get_list(appid, 3, "big")
+        self.logger.debug(f"Creating application with appid: {to_human_readable_hex(appid)}, ")
         appid = [appid[2], appid[1], appid[0]]
-        keycount = getInt(keycount, "big")
+        keycount = get_int(keycount, "big")
         params = appid + [calc_key_settings(keysettings)] + [keycount | type.value]
         cmd = DESFireCommand.DF_INS_CREATE_APPLICATION.value
         self.communicate(
-            self.command(cmd, params),
-            "cereate application",
-            nativ=True,
-            withTXCMAC=self.isAuthenticated,
+            self._command(cmd, params),
+            with_tx_cmac=self.is_authenticated,
         )
 
     def deleteApplication(self, appid):
@@ -428,18 +656,16 @@ class DESFire:
         Returns:
             None
         """
-        appid = getList(appid, 3, "big")
-        self.logger.debug("Deleting application for AppID %s", byte_array_to_human_readable_hex(appid))
+        appid = get_list(appid, 3, "big")
+        self.logger.debug("Deleting application for AppID %s", to_human_readable_hex(appid))
 
         appid = [appid[2], appid[1], appid[0]]
 
         params = appid
         cmd = DESFireCommand.DF_INS_DELETE_APPLICATION.value
         self.communicate(
-            self.command(cmd, params),
-            "delete Application",
-            nativ=True,
-            withTXCMAC=self.isAuthenticated,
+            self._command(cmd, params),
+            with_tx_cmac=self.is_authenticated,
         )
 
     ###################################################################################################################
@@ -448,153 +674,48 @@ class DESFire:
 
     ###### FILE FUNTCIONS
 
-    def getFileIDs(self):
-        """Lists all files belonging to the application currently selected. (SelectApplication needs to be called first)
-        Authentication is NOT ALWAYS needed to call this function. Depends on the application/card settings.
-        Args:
-            None
-        Returns:
-            list: A list of file IDs, in a 4 byte hex form
-        """
-        self.logger.debug("Enumerating all files for the selected application")
-        fileIDs = []
-
-        cmd = DESFireCommand.DF_INS_GET_FILE_IDS.value
-        raw_data = self.communicate([cmd], "get File ID's", nativ=True, withTXCMAC=self.isAuthenticated)
-        if len(raw_data) == 0:
-            self.logger.debug("No files found")
-        else:
-            for byte in raw_data:
-                fileIDs.append(byte)
-            self.logger.debug(
-                f"File ids: {''.join([byte_array_to_human_readable_hex(bytearray([id])) for id in fileIDs])}"
-            )
-        return fileIDs
-
-    def getFileSettings(self, fileid):
-        """Gets file settings for the File identified by fileid.(SelectApplication needs to be called first)
-        Authentication is NOT ALWAYS needed to call this function. Depends on the application/card settings.
-        Args:
-            fileid (int): FileID to get the settings for
-
-        Returns:
-            DESFireFileSettings: An object describing all settings for the file
-        """
-        fileid = getList(fileid, 1, "big")
-        self.logger.debug(f"Getting file settings for file {byte_array_to_human_readable_hex(fileid)}")
-
-        cmd = DESFireCommand.DF_INS_GET_FILE_SETTINGS.value
-        raw_data = raw_data = self.communicate(
-            self.command(cmd, fileid),
-            "Get File Settings",
-            nativ=True,
-            withTXCMAC=self.isAuthenticated,
-        )
-
-        file_settings = DESFireFileSettings()
-        file_settings.parse(raw_data)
-        return file_settings
-
-    def readFileData(self, fileId, offset, length):
-        """Read file data for fileID (SelectApplication needs to be called first)
-        Authentication is NOT ALWAYS needed to call this function. Depends on the application/card settings.
-        Args:
-            fileid (int): FileID to get the settings for
-        Returns:
-            str: the file data bytes
-        """
-        fileId = getList(fileId, 1)
-        offset = getInt(offset, "big")
-        length = getInt(length, "big")
-        ioffset = 0
-        ret = []
-
-        while length > 0:
-            count = min(length, 48)
-            cmd = DESFireCommand.DF_INS_READ_DATA.value
-            params = fileId + getList(offset + ioffset, 3, "little") + getList(count, 3, "little")
-            ret += self.communicate(
-                self.command(cmd, params),
-                "Read file data",
-                nativ=True,
-                withTXCMAC=self.isAuthenticated,
-            )
-            ioffset += count
-            length -= count
-
-        return ret
-
     def writeFileData(self, fileId, offset, length, data):
-        fileId = getList(fileId, 1)
-        offset = getInt(offset, "big")
-        length = getInt(length, "big")
-        data = getList(data)
+        fileId = get_list(fileId, 1)
+        offset = get_int(offset, "big")
+        length = get_int(length, "big")
+        data = get_list(data)
         ioffset = 0
 
         while length > 0:
-            count = min(length, self.MaxFrameSize - 8)
+            count = min(length, self.max_frame_size - 8)
             cmd = DESFireCommand.DF_INS_WRITE_DATA.value
             params = (
                 fileId
-                + getList(offset + ioffset, 3, "little")
-                + getList(count, 3, "little")
+                + get_list(offset + ioffset, 3, "little")
+                + get_list(count, 3, "little")
                 + data[ioffset : (ioffset + count)]
             )
             self.communicate(
-                self.command(cmd, params),
-                "write file data",
-                nativ=True,
-                withTXCMAC=self.isAuthenticated,
+                self._command(cmd, params),
+                with_tx_cmac=self.is_authenticated,
             )
             ioffset += count
             length -= count
 
     def deleteFile(self, fileId):
         return self.communicate(
-            self.command(DESFireCommand.DF_INS_DELETE_FILE.value, getList(fileId, 1, "little")),
-            "Delete File",
-            nativ=True,
-            withTXCMAC=self.isAuthenticated,
+            self._command(DESFireCommand.DF_INS_DELETE_FILE.value, get_list(fileId, 1, "little")),
+            with_tx_cmac=self.is_authenticated,
         )
 
     def createStdDataFile(self, fileId, filePermissions, fileSize):
-        params = getList(fileId, 1, "big")
+        params = get_list(fileId, 1, "big")
         params += [0x00]
-        params += getList(filePermissions.pack(), 2, "big")
-        params += getList(getInt(fileSize, "big"), 3, "little")
-        apdu_command = self.command(DESFireCommand.DF_INS_CREATE_STD_DATA_FILE.value, params)
+        params += get_list(filePermissions.pack(), 2, "big")
+        params += get_list(get_int(fileSize, "big"), 3, "little")
+        apdu_command = self._command(DESFireCommand.DF_INS_CREATE_STD_DATA_FILE.value, params)
         self.communicate(
             apdu_command,
-            "createStdDataFile",
-            nativ=True,
-            withTXCMAC=self.isAuthenticated,
+            with_tx_cmac=self.is_authenticated,
         )
         return
 
     ###### CRYPTO KEYS RELATED FUNCTIONS
-
-    def getKeyVersion(self, keyNo):
-        """
-        Gets the key version for the key identified by keyno. (SelectApplication needs to be called first,
-        otherwise it's getting the settings for the Master Key)
-        Authentication is ALWAYS needed to call this function.
-        Args:
-            keyNo (int) : The key number
-        Returns:
-            str: key version byte
-        """
-        self.logger.debug(f"Getting key version for keyid {keyNo:x}")
-
-        params = getList(keyNo, 1, "big")
-        cmd = DESFireCommand.DF_INS_GET_KEY_VERSION.value
-        raw_data = self.communicate(
-            self.command(cmd, params),
-            "get key version",
-            nativ=True,
-            withTXCMAC=self.isAuthenticated,
-        )
-        self.logger.debug("Got key version 0x%s for keyid %x" + str(keyNo))
-        return raw_data
 
     def changeKeySettings(self, newKeySettings):
         """Changes key settings for the key that was used to authenticate with in the current session.
@@ -609,11 +730,9 @@ class DESFire:
         params = [calc_key_settings(newKeySettings)]
         cmd = DESFireCommand.DF_INS_CHANGE_KEY_SETTINGS.value
         raw_data = self.communicate(
-            self.command(cmd, params),
-            "change key settings",
-            nativ=True,
-            isEncryptedComm=True,
-            withCRC=True,
+            self._command(cmd, params),
+            encrypted=True,
+            with_crc=True,
         )
 
     def changeKey(self, keyNo, newKey, curKey):
@@ -628,59 +747,57 @@ class DESFire:
             None
         """
 
-        keyNo = getInt(keyNo, "big")
+        keyNo = get_int(keyNo, "big")
         self.logger.debug(" -- Changing key --")
         # self.logger.debug('Changing key No: %s from %s to %s' % (keyNo, newKey, curKey))
-        if not self.isAuthenticated:
+        if not self.is_authenticated:
             raise Exception("Not authenticated!")
 
-        self.logger.debug("curKey : " + byte_array_to_human_readable_hex(curKey.getKey()))
-        self.logger.debug("newKey : " + byte_array_to_human_readable_hex(newKey.getKey()))
+        self.logger.debug("curKey : " + to_human_readable_hex(curKey.get_key()))
+        self.logger.debug("newKey : " + to_human_readable_hex(newKey.get_key()))
 
         isSameKey = keyNo == self.lastAuthKeyNo
         # self.logger.debug('isSameKey : ' + str(isSameKey))
 
         # The type of key can only be changed for the PICC master key.
         # Applications must define their key type in CreateApplication().
-        if self.lastSelectedApplication == 0x00:
+        if self.last_selected_application == 0x00:
             keyNo = keyNo | newKey.keyType.value
 
-        cryptogram = self.command(DESFireCommand.DF_INS_CHANGE_KEY.value, [keyNo])
+        cryptogram = self._command(DESFireCommand.DF_INS_CHANGE_KEY.value, [keyNo])
         # The following if() applies only to application keys.
         # For the PICC master key b_SameKey is always true because there is only ONE key (#0) at the PICC level.
         if not isSameKey:
             keyData_xor = []
-            if len(newKey.getKey()) > len(curKey.getKey()):
-                keyData_xor = bytearray(strxor(bytes(newKey.getKey()), bytes(curKey.getKey() * 2)))
+            if len(newKey.get_key()) > len(curKey.get_key()):
+                keyData_xor = bytearray(strxor(bytes(newKey.get_key()), bytes(curKey.get_key() * 2)))
             else:
-                keyData_xor = bytearray(strxor(bytes(newKey.getKey()), bytes(curKey.getKey())))
+                keyData_xor = bytearray(strxor(bytes(newKey.get_key()), bytes(curKey.get_key())))
             cryptogram += keyData_xor
         else:
-            cryptogram += newKey.getKey()
+            cryptogram += newKey.get_key()
 
         if newKey.keyType == DESFireKeyType.DF_KEY_AES:
             cryptogram += [newKey.keyVersion]
 
         cryptogram += bytearray(CRC32(cryptogram).to_bytes(4, byteorder="little"))
         if not isSameKey:
-            cryptogram += bytearray(CRC32(newKey.getKey()).to_bytes(4, byteorder="little"))
+            cryptogram += bytearray(CRC32(newKey.get_key()).to_bytes(4, byteorder="little"))
 
         # self.logger.debug( (int2hex(DESFireCommand.DF_INS_CHANGE_KEY.value) + int2hex(keyNo) + cryptogram).encode('hex'))
         raw_data = self.communicate(
             cryptogram,
-            "change key",
-            nativ=True,
-            isEncryptedComm=True,
-            withRXCMAC=not isSameKey,
-            withTXCMAC=False,
-            withCRC=False,
-            encryptBegin=2,
+            encrypted=True,
+            with_rxc_mac=not isSameKey,
+            with_tx_cmac=False,
+            with_crc=False,
+            encrypt_begin=2,
         )
 
         # If we changed the currently active key, then re-auth is needed!
         if isSameKey:
-            self.isAuthenticated = False
-            self.sessionKey = None
+            self.is_authenticated = False
+            self.session_key = None
 
         return
 
@@ -690,6 +807,6 @@ class DESFire:
 
     def createKeySetting(self, key, keyNumbers, keyType, keySettings):
         ret = DESFireKey()
-        ret.setKeySettings(getInt(keyNumbers, "big"), keyType, calc_key_settings(keySettings))
-        ret.setKey(getList(key))
+        ret.set_key_settings(get_int(keyNumbers, "big"), keyType, calc_key_settings(keySettings))
+        ret.set_key(get_list(key))
         return ret
