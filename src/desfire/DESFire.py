@@ -625,7 +625,7 @@ class DESFire:
         raw_data = self._transceive(
             self._command(DESFireCommand.DF_INS_GET_APPLICATION_IDS.value),
             DESFireCommunicationMode.PLAIN,
-            DESFireCommunicationMode.PLAIN,
+            DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
 
         pointer = 0

@@ -80,5 +80,3 @@ known-first-party = ["backend", "worker", "helper"]
 
 [tool.mypy]
 disable_error_code = "import-untyped"
-enable_incomplete_feature = ["NewGenericSyntax"]
-
