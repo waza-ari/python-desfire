@@ -3,8 +3,6 @@ from typing import Literal
 
 from Crypto.Util.number import bytes_to_long, long_to_bytes
 
-from .enums import DESFireKeySettings
-
 
 def get_int(data: int | str | bytearray | bytes, byteorder: Literal["little", "big"] = "big") -> int:
     """
@@ -69,22 +67,3 @@ def xor_lists(list1: list[int], list2: list[int]) -> list[int]:
     Takes two lists and performs a bytewise xor on those lists..
     """
     return [a ^ b for a, b in zip(list1, list2)]
-
-
-def calc_key_settings(mask):
-    if type(mask) is list:
-        # not parsing, but calculating
-        res = 0
-        for keysetting in mask:
-            res += keysetting.value
-        return res & 0xFF
-
-    a = 2147483648
-    result = []
-    while a >> 1:
-        a = a >> 1
-        masked = mask & a
-        if masked:
-            if DESFireKeySettings(masked):
-                result.append(DESFireKeySettings(masked))
-    return result

@@ -2,6 +2,7 @@ from smartcard.util import toHexString
 
 from .enums import DESFireKeyType
 from .key.key import DESFireKey
+from .schemas import KeySettings
 
 
 def diversify_key(key_data: list[int], diversification: list[int], pad_to_32: bool = True) -> list[int]:
@@ -20,9 +21,7 @@ def diversify_key(key_data: list[int], diversification: list[int], pad_to_32: bo
 
     print("Diversification data: ", toHexString(diversification))
 
-    key = DESFireKey()
-    key.set_key_settings(0, DESFireKeyType.DF_KEY_AES, 0)
-    key.set_key(bytes(key_data))
+    key = DESFireKey(KeySettings(key_type=DESFireKeyType.DF_KEY_AES), bytes(key_data))
     key.generate_cmac()
     key.clear_iv()
 

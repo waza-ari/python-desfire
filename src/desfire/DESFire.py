@@ -10,7 +10,8 @@ from .file.settings import DESFireFileSettings
 from .key.card_version import DESFireCardVersion
 from .key.key import DESFireKey
 from .pcsc import Device
-from .util import CRC32, calc_key_settings, get_int, get_list
+from .schemas import KeySettings
+from .util import CRC32, get_int, get_list
 
 
 class DESFire:
@@ -21,7 +22,7 @@ class DESFire:
     is_authenticated: bool = False
     session_key: DESFireKey | None = None
     max_frame_size: int = 60
-    last_selected_application: int | None = None
+    last_selected_application: list[int] | None = None
 
     def __init__(self, device: Device, logger: logging.Logger | None = None):
         """
@@ -427,13 +428,34 @@ class DESFire:
         )
         return DESFireCardVersion(raw_data)
 
+    def format_card(self):
+        """
+        Formats the card
+        WARNING! THIS COMPLETELY WIPES THE CARD AND RESETS IF TO A BLANK CARD!!
+        Authentication using the App 0 master key is needed to call this function
+        """
+        self.logger.debug("Formatting card")
+        cmd = DESFireCommand.DF_INS_FORMAT_PICC.value
+        self._transceive(self._command(cmd), DESFireCommunicationMode.CMAC, DESFireCommunicationMode.PLAIN)
+
     #
     ## Key Related
     #
 
-    def get_key_setting(self) -> DESFireKey:
+    def get_key_setting(self) -> KeySettings:
         """
-        Gets the key settings for the currently selected application.
+        Gets the key settings for the master key of the application currently selected.
+
+        It returns two bytes, where the first byte contains the key settings for the current application
+        as described in the change_key_settings method. The second byte is structured as follows:
+
+        KKKK|DDDD
+        7       0
+
+        K: Determines the key type as defined in the DESFireKeyType enum
+        D: Maximum number of keys that are allowed by the application
+
+        D seems to be always 1 for the main appliction (0x0).
 
         CMAC is used for communication if authenticated, otherwise plain communication is used.
         """
@@ -442,15 +464,24 @@ class DESFire:
             DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
-        ret = DESFireKey()
-        ret.set_key_settings(resp[1] & 0x0F, DESFireKeyType(resp[1] & 0xF0), resp[0] & 0x07)
-        return ret
+        # Print for now, to see what we get
+        print(toHexString(resp))
+        res = KeySettings(
+            application_id=self.last_selected_application or [0x0],
+            key_type=DESFireKeyType(resp[1] & 0xF0),  # Only interested in first 4 bits of the second byte
+            max_keys=resp[1] & 0x0F,  # Only interested in last 4 bits of the second byte
+            settings=[],
+        )
+        return res
 
-    def get_key_version(self, key_number: int) -> list[int]:
+    def get_key_version(self, key_number: int) -> int:
         """
-        Gets the key version for the key identified by keyno.
-        SelectApplication needs to be called first, otherwise it's getting the settings for the Master Key
+        Returns the version of the key, which is a one byte identifier that can be set when the key is created.
+        It is typically used to distinguish between different versions of the same key in use.
+
         Authentication is ALWAYS needed to call this function.
+
+        Returns a single byte containing the custom version information.
         """
         self.logger.debug(f"Getting key version for keyid {key_number:x}")
 
@@ -461,7 +492,8 @@ class DESFire:
             DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
-        return raw_data
+        assert len(raw_data) == 1
+        return raw_data[0]
 
     #
     ## Application related
@@ -490,7 +522,7 @@ class DESFire:
 
         return apps
 
-    def select_application(self, appid: int):
+    def select_application(self, appid: str | bytearray | bytes | int):
         """
         Choose application on a card on which all the following commands will apply.
         Authentication is NOT ALWAYS needed to call this function. Depends on the application settings.
@@ -511,7 +543,50 @@ class DESFire:
 
         # if new application is selected, authentication needs to be carried out again
         self.is_authenticated = False
-        self.last_selected_application = appid
+        self.last_selected_application = parsed_appid
+
+    def create_application(self, appid: list[int] | str, keysettings: KeySettings, keycount: int):
+        """
+        Creates application on the card with the specified settings
+        Authentication is ALWAYS needed before calling this function.
+        """
+
+        if not self.is_authenticated:
+            raise Exception("Not authenticated!")
+
+        if isinstance(appid, str):
+            appid = get_list(appid, 2, "big")
+
+        self.logger.debug(f"Creating application with appid: {toHexString(appid)}, ")
+        params = appid + [keysettings.get_settings()] + [keycount]
+        cmd = DESFireCommand.DF_INS_CREATE_APPLICATION.value
+        self._transceive(
+            self._command(cmd, params),
+            DESFireCommunicationMode.CMAC,
+            DESFireCommunicationMode.CMAC,
+        )
+
+    def deleteApplication(self, appid: list[int] | str):
+        """
+        Deletes the application specified by appid
+        Authentication is ALWAYS needed to call this function.
+        """
+
+        if not self.is_authenticated:
+            raise Exception("Not authenticated!")
+
+        if isinstance(appid, str):
+            appid = get_list(appid, 2, "big")
+
+        self.logger.debug("Deleting application for AppID %s", toHexString(appid))
+
+        appid.reverse()
+
+        self._transceive(
+            self._command(DESFireCommand.DF_INS_DELETE_APPLICATION.value, appid),
+            DESFireCommunicationMode.CMAC,
+            DESFireCommunicationMode.CMAC,
+        )
 
     #
     ## File related
@@ -542,7 +617,7 @@ class DESFire:
         else:
             for byte in raw_data:
                 file_ids.append(byte)
-            self.logger.debug(f"File ids: {''.join([toHexString(bytearray([id])) for id in file_ids])}")
+            self.logger.debug(f"File ids: {''.join([toHexString([id]) for id in file_ids])}")
 
         return file_ids
 
@@ -601,74 +676,6 @@ class DESFire:
 
         return ret
 
-    ###################################
-    ### TO BE DONE
-
-    def formatCard(self):
-        """
-        Formats the card
-        WARNING! THIS COMPLETELY WIPES THE CARD AND RESETS IF TO A BLANK CARD!!
-        Authentication is needed to call this function
-        Args:
-            None
-        Returns:
-            None
-        """
-        self.logger.debug("Formatting card")
-        cmd = DESFireCommand.DF_INS_FORMAT_PICC.value
-        self.communicate([cmd], with_tx_cmac=self.is_authenticated)
-
-    ###### Application related
-
-    def createApplication(self, appid, keysettings, keycount, type):
-        """
-        Creates application on the card with the specified settings
-        Authentication is ALWAYS needed before calling this function.
-
-
-        :param appid: The application ID of the app to be created
-        :type appid:
-        :param keysettings: Key settings to be applied to the application to be created.
-            MUST contain entryes derived from the DESFireKeySettings enum
-        :type keysettings:
-        :param keycount:
-        :type keycount:
-        :param type: Key type that will specify the encryption used for authenticating to this application and
-            communication with it.MUST be coming from the DESFireKeyType enum
-        :type type:
-        """
-
-        appid = get_list(appid, 3, "big")
-        self.logger.debug(f"Creating application with appid: {toHexString(appid)}, ")
-        appid = [appid[2], appid[1], appid[0]]
-        keycount = get_int(keycount, "big")
-        params = appid + [calc_key_settings(keysettings)] + [keycount | type.value]
-        cmd = DESFireCommand.DF_INS_CREATE_APPLICATION.value
-        self.communicate(
-            self._command(cmd, params),
-            with_tx_cmac=self.is_authenticated,
-        )
-
-    def deleteApplication(self, appid):
-        """Deletes the application specified by appid
-        Authentication is ALWAYS needed to call this function.
-        Args:
-            appid (int)       : The application ID of the app to be deleted
-        Returns:
-            None
-        """
-        appid = get_list(appid, 3, "big")
-        self.logger.debug("Deleting application for AppID %s", toHexString(appid))
-
-        appid = [appid[2], appid[1], appid[0]]
-
-        params = appid
-        cmd = DESFireCommand.DF_INS_DELETE_APPLICATION.value
-        self.communicate(
-            self._command(cmd, params),
-            with_tx_cmac=self.is_authenticated,
-        )
-
     ###################################################################################################################
     ### This Function is not refactored
     ###################################################################################################################
@@ -718,7 +725,7 @@ class DESFire:
 
     ###### CRYPTO KEYS RELATED FUNCTIONS
 
-    def changeKeySettings(self, newKeySettings):
+    def change_key_settings(self, newKeySettings):
         """Changes key settings for the key that was used to authenticate with in the current session.
         Authentication is ALWAYS needed to call this function.
         Args:
@@ -762,7 +769,7 @@ class DESFire:
 
         # The type of key can only be changed for the PICC master key.
         # Applications must define their key type in CreateApplication().
-        if self.last_selected_application == 0x00:
+        if self.last_selected_application == [0x00]:
             keyNo = keyNo | newKey.keyType.value
 
         cryptogram = self._command(DESFireCommand.DF_INS_CHANGE_KEY.value, [keyNo])
@@ -801,13 +808,3 @@ class DESFire:
             self.session_key = None
 
         return
-
-    #######################################################################################################################################
-    ### Helper function
-    #######################################################################################################################################
-
-    def createKeySetting(self, key, keyNumbers, keyType, keySettings):
-        ret = DESFireKey()
-        ret.set_key_settings(get_int(keyNumbers, "big"), keyType, calc_key_settings(keySettings))
-        ret.set_key(get_list(key))
-        return ret

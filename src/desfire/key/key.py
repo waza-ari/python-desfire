@@ -1,6 +1,8 @@
 from smartcard.util import toHexString
 
-from ..enums import DESFireKeySettings, DESFireKeyType
+from desfire.schemas import KeySettings
+
+from ..enums import DESFireKeyType
 from ..exceptions import DESFireException
 from ..util import CRC32, xor_lists
 from .cmac import CMAC
@@ -14,17 +16,20 @@ class DESFireKey:
     keyVersion: int = 0
     cipher_block_size: int | None = None
     cmac: CMAC | None = None
-    key_numbers: int = 0
 
     # Global IV for this key, used for cipher operations and CMAC calculation
     iv: list[int]
     iv0: list[int]
 
-    def __init__(self):
-        self.key_settings = 0
+    def __init__(self, settings: KeySettings, key_data: str | bytes | None = None):
+        self.key_type = settings.key_type
+        if key_data:
+            self.set_key(key_data)
+        self.cipher_init()
 
     # Internal methods
     def _set_key_size(self, key_size: int):
+        self.cipher_block_size = key_size
         self.key_size = key_size
         self.iv0 = [0] * key_size
 
@@ -39,10 +44,7 @@ class DESFireKey:
 
         # If the key size is not set, we assume it is 8 bytes
         if self.key_size == 0:
-            if self.key_bytes is None:
-                self._set_key_size(8)
-            else:
-                self._set_key_size(len(self.key_bytes))
+            self._set_key_size(8 if not self.key_bytes else len(self.key_bytes))
 
         # Depending on the key type, set cipher related variables
         if self.key_type == DESFireKeyType.DF_KEY_AES:
@@ -90,7 +92,6 @@ class DESFireKey:
             self.key_bytes = bytes(bytearray.fromhex(key))
         else:
             self.key_bytes = key
-        self.cipher_block_size = len(self.key_bytes)
         self._set_key_size(len(self.key_bytes))
 
     def encrypt(self, data: list[int]) -> list[int]:
@@ -148,53 +149,19 @@ class DESFireKey:
         self.set_iv(ret[-self.cipher_block_size :])
         return ret[-self.cipher_block_size :]
 
-    def human_key_settings(self) -> list[str]:
-        """
-        Returns a human readable list of key settings
-        """
-        settings = []
-        for i in range(0, 16):
-            if (self.key_settings & (1 << i)) != 0:
-                settings.append(DESFireKeySettings(1 << i).name)
-        return settings
-
-    #
-    ## To be refactored
-    #
-
-    def set_key_settings(self, key_numbers: int, key_type: DESFireKeyType, key_settings: int):
-        self.key_numbers = key_numbers
-        self.key_type = key_type
-        self.key_settings = key_settings
-
-    def encrypt_msg(self, data: list[int], with_crc: bool = False, encrypt_begin: int = 1):
+    def encrypt_msg(self, data: list[int], with_crc: bool = False, encrypt_begin: int = 1) -> list[int]:
         """
         Encrypts a message that is to be sent to the card.
         """
         assert self.cipher_block_size
 
+        # Calculate the CRC32 checksum if needed
         if with_crc:
             data += CRC32(data)
 
+        # Pad the data to the next block size
         data += [0x00] * (-(len(data) - encrypt_begin) % self.cipher_block_size)
 
-        ret = list(bytearray(data[0:encrypt_begin]) + self.cmac.Encrypt(data[encrypt_begin:]))
-        # self.generate_cmac()
-        # self.calculate_cmac(bytearray(data))
+        # Encrypt the data
+        ret = data[0:encrypt_begin] + self.encrypt(data[encrypt_begin:])
         return ret
-
-    def __repr__(self) -> str:
-        return (
-            "--- Desfire Key Details ---\r\n"
-            + "keyNumbers:"
-            + str(self.key_numbers)
-            + "\r\nkeySize:"
-            + str(self.key_size)
-            + "\r\nversion:"
-            + str(self.keyVersion)
-            + "\nkeyType:"
-            + self.key_type.name
-            + "\r\n"
-            + "keySettings:"
-            + str(self.human_key_settings())
-        )
