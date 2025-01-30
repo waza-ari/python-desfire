@@ -22,6 +22,8 @@ class DESFireKey:
     iv0: list[int]
 
     def __init__(self, settings: KeySettings, key_data: str | bytes | None = None):
+        if not settings.key_type:
+            raise DESFireException("Key type must be set!")
         self.key_type = settings.key_type
         if key_data:
             self.set_key(key_data)
@@ -149,19 +151,19 @@ class DESFireKey:
         self.set_iv(ret[-self.cipher_block_size :])
         return ret[-self.cipher_block_size :]
 
-    def encrypt_msg(self, data: list[int], with_crc: bool = False, encrypt_begin: int = 1) -> list[int]:
+    def encrypt_msg(self, data: list[int], disable_crc: bool = False, offset: int = 1) -> list[int]:
         """
         Encrypts a message that is to be sent to the card.
         """
         assert self.cipher_block_size
 
         # Calculate the CRC32 checksum if needed
-        if with_crc:
+        if disable_crc:
             data += CRC32(data)
 
         # Pad the data to the next block size
-        data += [0x00] * (-(len(data) - encrypt_begin) % self.cipher_block_size)
+        data += [0x00] * (-(len(data) - offset) % self.cipher_block_size)
 
         # Encrypt the data
-        ret = data[0:encrypt_begin] + self.encrypt(data[encrypt_begin:])
+        ret = data[0:offset] + self.encrypt(data[offset:])
         return ret

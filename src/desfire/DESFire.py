@@ -1,17 +1,16 @@
 import logging
 
 from Crypto.Random import get_random_bytes
-from Crypto.Util.strxor import strxor
 from smartcard.util import toHexString
 
-from .enums import DESFireCommand, DESFireCommunicationMode, DESFireKeyType, DESFireStatus
+from .enums import DESFireCommand, DESFireCommunicationMode, DESFireKeySettings, DESFireKeyType, DESFireStatus
 from .exceptions import DESFireAuthException, DESFireCommunicationError, DESFireException
 from .file.settings import DESFireFileSettings
 from .key.card_version import DESFireCardVersion
 from .key.key import DESFireKey
 from .pcsc import Device
 from .schemas import KeySettings
-from .util import CRC32, get_int, get_list
+from .util import CRC32, get_int, get_list, xor_lists
 
 
 class DESFire:
@@ -23,6 +22,7 @@ class DESFire:
     session_key: DESFireKey | None = None
     max_frame_size: int = 60
     last_selected_application: list[int] | None = None
+    last_auth_key_id: int | None = None
 
     def __init__(self, device: Device, logger: logging.Logger | None = None):
         """
@@ -136,7 +136,13 @@ class DESFire:
 
         return r_val
 
-    def _preprocess(self, apdu_cmd: list[int], tx_mode: DESFireCommunicationMode) -> list[int]:
+    def _preprocess(
+        self,
+        apdu_cmd: list[int],
+        tx_mode: DESFireCommunicationMode,
+        disable_crc: bool = False,
+        encryption_offset: int = 0,
+    ) -> list[int]:
         """
         Preprocess the command before sending it to the card.
         This includes adding the padding and the CRC if needed.
@@ -160,7 +166,7 @@ class DESFire:
             return apdu_cmd + tx_cmac[-8:]
         elif tx_mode == DESFireCommunicationMode.ENCRYPTED:
             # Encrypt the command
-            return self.session_key.encrypt_msg(apdu_cmd, with_crc=True)
+            return self.session_key.encrypt_msg(apdu_cmd, disable_crc=disable_crc, offset=encryption_offset)
         else:
             raise Exception("Invalid communication mode")
 
@@ -235,6 +241,8 @@ class DESFire:
         tx_mode: DESFireCommunicationMode,
         rx_mode: DESFireCommunicationMode,
         af_passthrough: bool = False,
+        disable_crc: bool = False,
+        encryption_offset: int = 0,
     ) -> list[int]:
         """
         Communicate with the card. This is the main function that sends the APDU command and performs
@@ -248,7 +256,7 @@ class DESFire:
                 raise Exception("Cant perform crypto operations without authentication!")
 
         # Preprocess the command, includes CMAC calculation and encryption
-        apdu_cmd = self._preprocess(apdu_cmd, tx_mode)
+        apdu_cmd = self._preprocess(apdu_cmd, tx_mode, disable_crc, encryption_offset)
 
         # Send the command to the card, note that this command will raise an exception if the card returns an error
         response = self._communicate(apdu_cmd, af_passthrough=af_passthrough)
@@ -367,7 +375,7 @@ class DESFire:
 
         self.logger.debug("Authentication success!")
         self.is_authenticated = True
-        self.lastAuthKeyNo = key_id  # TODO: Verify if this is needed
+        self.last_auth_key_id = key_id
 
         self.logger.debug("Calculating Session key")
         session_key_bytes = RndA[:4]
@@ -495,6 +503,114 @@ class DESFire:
         assert len(raw_data) == 1
         return raw_data[0]
 
+    def change_key_settings(self, new_settings: list[DESFireKeySettings]):
+        """
+        Changes key settings for the application currently selected.
+        Authentication is ALWAYS needed to call this function.
+
+        Note that the key settings depend on the application that is currently selected.
+        Settings are represented as one byte, which is structures as follows:
+
+        FFFF|AAAA
+        0       7
+
+        The first four bits are flags which control certain settings, such as whether creating and deleting
+        applications requires authentication or not. Refer to DESFireKeySettings for more information.
+
+        WARNING: Bit 3 (frozen settings) cannot be cleared once it is set.
+
+        The last four bits are only relevant for applications and determine how keys can be changed. Values below
+        are represented in hex:
+
+        - 0x0 - 0xD: This specific key can change any key
+        - 0xE: Only the key that was used for authentication can be changed
+        - 0xF: All keys are locked (except master key, this is controlled by a flag as documented above)
+        """
+
+        if not self.is_authenticated:
+            raise DESFireException("Not authenticated.")
+
+        key_settings = KeySettings(
+            settings=new_settings,
+        )
+
+        # self.logger.debug('Changing key settings to %s' %('|'.join(a.name for a in newKeySettings),))
+        self._transceive(
+            self._command(DESFireCommand.DF_INS_CHANGE_KEY_SETTINGS.value, [key_settings.get_settings()]),
+            DESFireCommunicationMode.ENCRYPTED,
+            DESFireCommunicationMode.CMAC,
+        )
+
+    def change_key(self, key_id: int, current_key: DESFireKey, new_key: DESFireKey, new_key_version: int | None = None):
+        """
+        Changes current key (curKey) to a new one (newKey) in specified keyslot (keyno)
+        Authentication is ALWAYS needed to call this function.
+        """
+
+        self.logger.debug(f" -- Changing key {key_id} --")
+
+        if not self.is_authenticated:
+            raise DESFireException("Not authenticated!")
+
+        self.logger.debug("curKey : " + toHexString(current_key.get_key()))
+        self.logger.debug("newKey : " + toHexString(new_key.get_key()))
+
+        # If we're changing the key we're authenticated with, the message format
+        # is different than if we're changing a different key.
+        is_same_key = key_id == self.last_auth_key_id
+        self.logger.info(f"Are we changing the key we're authenticated with: {is_same_key}")
+
+        # Calculate the key number parameter
+        # The key_no parameter has 4 bits (MSB, key type) + 4 bits (LSB, key number).
+        # The type of key can only be changed for the PICC master key
+        # Applications must define their key type in create_application()
+        key_number = key_id & 0x0F
+        if self.last_selected_application == [0x00]:
+            key_number = key_number | current_key.key_type.value
+
+        # Data to transmit depends on whether we're changing the PICC master key or an application key
+        # and whether we're changing the key we're authenticated with or a different one
+        data = self._command(DESFireCommand.DF_INS_CHANGE_KEY.value, [key_number])
+
+        # The following can only apply to application keys, as the PICC has only one key (0x00).
+        if not is_same_key:
+            # If we're changing a different key, new key data is the new key XORed with the old key
+            # If we're changing the key type at the same time, we need to XOR the new key with the old key twice
+            if len(new_key.get_key()) > len(current_key.get_key()):
+                data += xor_lists(list(new_key.get_key()), list(current_key.get_key()) * 2)
+            else:
+                data += xor_lists(list(new_key.get_key()), list(current_key.get_key()))
+        else:
+            # If we're changing the key we're authenticated with, new key data is the new key
+            data += list(new_key.get_key())
+
+        # If the new key is AES, we need to append the key version
+        if new_key.key_type == DESFireKeyType.DF_KEY_AES:
+            assert new_key_version is not None
+            data += [new_key_version]
+
+        # Regular CRC32 of the data is always appended
+        data += CRC32(data)
+
+        # If we're changing a different key, CRC32 of the new key is appended as well
+        if not is_same_key:
+            data += CRC32(list(new_key.get_key()))
+
+        # Send the command
+        # TODO: We need a way to disable CRC in pre_process and set encryption offset, as the keyno is not encrypted
+        self._transceive(
+            data,
+            tx_mode=DESFireCommunicationMode.ENCRYPTED,
+            rx_mode=DESFireCommunicationMode.CMAC if is_same_key else DESFireCommunicationMode.PLAIN,
+        )
+
+        # If we changed the currently active key, then re-auth is needed!
+        if is_same_key:
+            self.is_authenticated = False
+            self.session_key = None
+
+        return
+
     #
     ## Application related
     #
@@ -543,6 +659,7 @@ class DESFire:
 
         # if new application is selected, authentication needs to be carried out again
         self.is_authenticated = False
+        self.last_auth_key_id = None
         self.last_selected_application = parsed_appid
 
     def create_application(self, appid: list[int] | str, keysettings: KeySettings, keycount: int):
@@ -676,6 +793,20 @@ class DESFire:
 
         return ret
 
+    def delete_file(self, file_id: int):
+        """
+        Deletes the file specified by file_id
+        """
+
+        if not self.last_selected_application:
+            raise DESFireException("No application selected, call select_application first")
+
+        return self._transceive(
+            self._command(DESFireCommand.DF_INS_DELETE_FILE.value, get_list(file_id, 1, "little")),
+            DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
+            DESFireCommunicationMode.PLAIN,
+        )
+
     ###################################################################################################################
     ### This Function is not refactored
     ###################################################################################################################
@@ -705,12 +836,6 @@ class DESFire:
             ioffset += count
             length -= count
 
-    def deleteFile(self, fileId):
-        return self.communicate(
-            self._command(DESFireCommand.DF_INS_DELETE_FILE.value, get_list(fileId, 1, "little")),
-            with_tx_cmac=self.is_authenticated,
-        )
-
     def createStdDataFile(self, fileId, filePermissions, fileSize):
         params = get_list(fileId, 1, "big")
         params += [0x00]
@@ -721,90 +846,4 @@ class DESFire:
             apdu_command,
             with_tx_cmac=self.is_authenticated,
         )
-        return
-
-    ###### CRYPTO KEYS RELATED FUNCTIONS
-
-    def change_key_settings(self, newKeySettings):
-        """Changes key settings for the key that was used to authenticate with in the current session.
-        Authentication is ALWAYS needed to call this function.
-        Args:
-            newKeySettings (list) : A list with DESFireKeySettings enum value
-
-        Returns:
-            None
-        """
-        # self.logger.debug('Changing key settings to %s' %('|'.join(a.name for a in newKeySettings),))
-        params = [calc_key_settings(newKeySettings)]
-        cmd = DESFireCommand.DF_INS_CHANGE_KEY_SETTINGS.value
-        raw_data = self.communicate(
-            self._command(cmd, params),
-            encrypted=True,
-            with_crc=True,
-        )
-
-    def changeKey(self, keyNo, newKey, curKey):
-        """Changes current key (curKey) to a new one (newKey) in specified keyslot (keyno)
-        Authentication is ALWAYS needed to call this function.
-        Args:
-            keyNo  (int) : Key number
-            newKey (DESFireKey)    : The new key
-            curKey (DESFireKey)    : The current key for that keyslot
-
-        Returns:
-            None
-        """
-
-        keyNo = get_int(keyNo, "big")
-        self.logger.debug(" -- Changing key --")
-        # self.logger.debug('Changing key No: %s from %s to %s' % (keyNo, newKey, curKey))
-        if not self.is_authenticated:
-            raise Exception("Not authenticated!")
-
-        self.logger.debug("curKey : " + toHexString(curKey.get_key()))
-        self.logger.debug("newKey : " + toHexString(newKey.get_key()))
-
-        isSameKey = keyNo == self.lastAuthKeyNo
-        # self.logger.debug('isSameKey : ' + str(isSameKey))
-
-        # The type of key can only be changed for the PICC master key.
-        # Applications must define their key type in CreateApplication().
-        if self.last_selected_application == [0x00]:
-            keyNo = keyNo | newKey.keyType.value
-
-        cryptogram = self._command(DESFireCommand.DF_INS_CHANGE_KEY.value, [keyNo])
-        # The following if() applies only to application keys.
-        # For the PICC master key b_SameKey is always true because there is only ONE key (#0) at the PICC level.
-        if not isSameKey:
-            keyData_xor = []
-            if len(newKey.get_key()) > len(curKey.get_key()):
-                keyData_xor = bytearray(strxor(bytes(newKey.get_key()), bytes(curKey.get_key() * 2)))
-            else:
-                keyData_xor = bytearray(strxor(bytes(newKey.get_key()), bytes(curKey.get_key())))
-            cryptogram += keyData_xor
-        else:
-            cryptogram += newKey.get_key()
-
-        if newKey.keyType == DESFireKeyType.DF_KEY_AES:
-            cryptogram += [newKey.keyVersion]
-
-        cryptogram += bytearray(CRC32(cryptogram).to_bytes(4, byteorder="little"))
-        if not isSameKey:
-            cryptogram += bytearray(CRC32(newKey.get_key()).to_bytes(4, byteorder="little"))
-
-        # self.logger.debug( (int2hex(DESFireCommand.DF_INS_CHANGE_KEY.value) + int2hex(keyNo) + cryptogram).encode('hex'))
-        raw_data = self.communicate(
-            cryptogram,
-            encrypted=True,
-            with_rxc_mac=not isSameKey,
-            with_tx_cmac=False,
-            with_crc=False,
-            encrypt_begin=2,
-        )
-
-        # If we changed the currently active key, then re-auth is needed!
-        if isSameKey:
-            self.is_authenticated = False
-            self.session_key = None
-
         return

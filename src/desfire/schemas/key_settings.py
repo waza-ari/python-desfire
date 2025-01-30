@@ -16,7 +16,7 @@ class KeySettings(BaseModel):
     """
     Key type (DES, 2K3DES, 3K3DES, AES)
     """
-    key_type: DESFireKeyType
+    key_type: DESFireKeyType | None = None
 
     """
     Array of key settings that are set for this master key
