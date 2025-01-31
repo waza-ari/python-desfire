@@ -706,15 +706,24 @@ class DESFire:
         if not self.is_authenticated:
             raise Exception("Not authenticated!")
 
+        if not keysettings.settings or not keysettings.key_type:
+            raise Exception("The key type and key settings must be set in the KeySettings object.")
+
+        if not 0 <= keycount <= 14:
+            raise Exception("Key count must be between 0 and 14.")
+
         if isinstance(appid, str):
             appid = get_list(appid, 2, "big")
 
         self.logger.debug(f"Creating application with appid: {toHexString(appid)}, ")
-        params = appid + [keysettings.get_settings()] + [keycount]
+
+        # Structure of the APDU:
+        # 0xCA + AppID (3 bytes) + key settings (1 byte) + app settings (4 MSB = key type, 4 LSB = key count)
+        params = appid + [keysettings.get_settings()] + [keycount | keysettings.key_type.value]
         cmd = DESFireCommand.DF_INS_CREATE_APPLICATION.value
         self._transceive(
             self._command(cmd, params),
-            DESFireCommunicationMode.CMAC,
+            DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.CMAC,
         )
 
