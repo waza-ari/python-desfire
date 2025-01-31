@@ -557,8 +557,8 @@ class DESFire:
         if not self.is_authenticated:
             raise DESFireException("Not authenticated!")
 
-        self.logger.debug("curKey : " + toHexString(current_key.get_key()))
-        self.logger.debug("newKey : " + toHexString(new_key.get_key()))
+        self.logger.debug("curKey : " + toHexString(list(current_key.get_key())))
+        self.logger.debug("newKey : " + toHexString(list(new_key.get_key())))
 
         # If we're changing the key we're authenticated with, the message format
         # is different than if we're changing a different key.
@@ -601,11 +601,11 @@ class DESFire:
         if not is_same_key:
             data += CRC32(list(new_key.get_key()))
 
-        # Send the command
+        # Send the command - auth session is invalidated if we chnge the key we're authenticated with
         self._transceive(
             data,
             tx_mode=DESFireCommunicationMode.ENCRYPTED,
-            rx_mode=DESFireCommunicationMode.CMAC if is_same_key else DESFireCommunicationMode.PLAIN,
+            rx_mode=DESFireCommunicationMode.PLAIN if is_same_key else DESFireCommunicationMode.CMAC,
             disable_crc=True,
             encryption_offset=2,
         )
@@ -685,11 +685,11 @@ class DESFire:
         # TODO: Check why this is reversed after parsing the list big endian above
         parameters = [parsed_appid[2], parsed_appid[1], parsed_appid[0]]
 
-        # If we are authenticated, we use CMAC for communication, otherwise we use plain communication
+        #  As application selection invalidates auth, there's no need to use CMAC
         self._transceive(
             self._command(DESFireCommand.DF_INS_SELECT_APPLICATION.value, parameters),
             DESFireCommunicationMode.PLAIN,
-            DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
+            DESFireCommunicationMode.PLAIN,
         )
 
         # if new application is selected, authentication needs to be carried out again
