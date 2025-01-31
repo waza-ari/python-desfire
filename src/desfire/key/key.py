@@ -149,7 +149,7 @@ class DESFireKey:
         xor_data = ndata[0 : -self.cipher_block_size] + xor_lists(ndata[-self.cipher_block_size :], key_to_use)
 
         # Encrypt the padded data
-        ret = self.encrypt(list(xor_data))
+        ret = self.encrypt(xor_data)
 
         # Update the IV with the last block of the encrypted data
         self.set_iv(ret[-self.cipher_block_size :])
