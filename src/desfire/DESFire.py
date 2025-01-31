@@ -444,7 +444,7 @@ class DESFire:
         """
         self.logger.debug("Formatting card")
         cmd = DESFireCommand.DF_INS_FORMAT_PICC.value
-        self._transceive(self._command(cmd), DESFireCommunicationMode.CMAC, DESFireCommunicationMode.PLAIN)
+        self._transceive(self._command(cmd), DESFireCommunicationMode.PLAIN, DESFireCommunicationMode.PLAIN)
 
     #
     ## Key Related
