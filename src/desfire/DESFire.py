@@ -192,8 +192,6 @@ class DESFire:
             The CMAC is calculated over the payload of the response (i.e after the status byte) and then the status byte
             appended to the end. If the response is multiple parts then the payload of these parts are concatenated
             (without the AF status byte) and the final status byte added to the end.
-
-            TODO: Update for CRC16 which may be used for BS8 ciphers
             """
             # Check if the CMAC is correct
             assert self.session_key is not None
@@ -219,7 +217,7 @@ class DESFire:
             padded_response = self._add_padding(response)
             self.logger.debug("Padded response: " + toHexString(padded_response))
             decrypted_response = self.session_key.decrypt(padded_response)
-            self.logger.debug("Decrypted response: " + toHexString(response))
+            self.logger.debug("Decrypted response: " + toHexString(decrypted_response))
 
             # Update IV to the last block of the encrypted data
             self.session_key.set_iv(response[-self.session_key.cipher_block_size :])
@@ -229,9 +227,7 @@ class DESFire:
                 decrypted_response = decrypted_response[:-1]
 
             # Check if the CRC is correct - Status byte is appended to the data before CRC calculation
-            crc_bytes = (
-                4 if self.session_key.key_type in [DESFireKeyType.DF_KEY_AES, DESFireKeyType.DF_KEY_3K3DES] else 2
-            )
+            crc_bytes = 4  # 2 (CRC16) is only needed for legacy authentication, which we do not support (only ISO+AES)
             received_crc = decrypted_response[-crc_bytes:]
             self.logger.debug("Received CRC  : " + toHexString(received_crc))
             calculated_crc = CRC32(decrypted_response[:-crc_bytes] + [0x00])
@@ -606,7 +602,6 @@ class DESFire:
             data += CRC32(list(new_key.get_key()))
 
         # Send the command
-        # TODO: We need a way to disable CRC in pre_process and set encryption offset, as the keyno is not encrypted
         self._transceive(
             data,
             tx_mode=DESFireCommunicationMode.ENCRYPTED,
