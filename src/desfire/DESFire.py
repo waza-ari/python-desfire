@@ -165,8 +165,16 @@ class DESFire:
             # Only the last 8 bytes of the CMAC are used
             return apdu_cmd + tx_cmac[-8:]
         elif tx_mode == DESFireCommunicationMode.ENCRYPTED:
-            # Encrypt the command
-            return self.session_key.encrypt_msg(apdu_cmd, disable_crc=disable_crc, offset=encryption_offset)
+            assert self.session_key.cipher_block_size is not None
+
+            # Encrypt the command + data
+            resp_data = self.session_key.encrypt_msg(apdu_cmd, disable_crc=disable_crc, offset=encryption_offset)
+
+            # Update IV to the last block of the encrypted data
+            self.session_key.set_iv(resp_data[-self.session_key.cipher_block_size :])
+
+            # Return encrypted data
+            return resp_data
         else:
             raise Exception("Invalid communication mode")
 
