@@ -4,7 +4,7 @@ from enum import Enum
 class DESFireCommand(Enum):
     # ------- Desfire legacy instructions --------
 
-    DF_INS_AUTHENTICATE_LEGACY = 0x0A
+    DF_INS_AUTHENTICATE_LEGACY = 0x0A  # Authenticate with legacy DES
     DF_INS_CHANGE_KEY_SETTINGS = 0x54
     DF_INS_GET_KEY_SETTINGS = 0x45
     DF_INS_CHANGE_KEY = 0xC4
@@ -44,8 +44,8 @@ class DESFireCommand(Enum):
 
     # -------- Desfire EV1 instructions ----------
 
-    DFEV1_INS_AUTHENTICATE_ISO = 0x1A
-    DFEV1_INS_AUTHENTICATE_AES = 0xAA
+    DFEV1_INS_AUTHENTICATE_ISO = 0x1A  # Authenticate with 3DES, either with 2 keys (16 bytes) or 3 keys (24 bytes)
+    DFEV1_INS_AUTHENTICATE_AES = 0xAA  # Authenticate with AES-128
     DFEV1_INS_FREE_MEM = 0x6E
     DFEV1_INS_GET_DF_NAMES = 0x6D
     DFEV1_INS_GET_CARD_UID = 0x51

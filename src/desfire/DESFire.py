@@ -184,6 +184,8 @@ class DESFire:
             The CMAC is calculated over the payload of the response (i.e after the status byte) and then the status byte
             appended to the end. If the response is multiple parts then the payload of these parts are concatenated
             (without the AF status byte) and the final status byte added to the end.
+
+            TODO: Update for CRC16 which may be used for BS8 ciphers
             """
             # Check if the CMAC is correct
             assert self.session_key is not None
@@ -306,7 +308,7 @@ class DESFire:
             cmd = DESFireCommand.DFEV1_INS_AUTHENTICATE_AES.value
             params = [key_id]
         elif key.key_type == DESFireKeyType.DF_KEY_2K3DES or key.key_type == DESFireKeyType.DF_KEY_3K3DES:
-            self.logger.debug("Authenticating with 3DES key")
+            self.logger.debug("Authenticating with DES/3DES key")
             cmd = DESFireCommand.DFEV1_INS_AUTHENTICATE_ISO.value
             params = [key_id]
         else:
@@ -601,12 +603,44 @@ class DESFire:
             data,
             tx_mode=DESFireCommunicationMode.ENCRYPTED,
             rx_mode=DESFireCommunicationMode.CMAC if is_same_key else DESFireCommunicationMode.PLAIN,
+            disable_crc=True,
+            encryption_offset=2,
         )
 
         # If we changed the currently active key, then re-auth is needed!
         if is_same_key:
             self.is_authenticated = False
             self.session_key = None
+
+        return
+
+    def change_default_key(self, new_key: DESFireKey, key_version: int = 0):
+        """
+        The default key is used as application master key when creating new applications
+
+        Uses command 0x5C01
+        """
+
+        if not self.is_authenticated:
+            raise DESFireException("Not authenticated!")
+
+        # 0x5C is related to the card configuration, 0x01 is the dedault key
+        data = self._command(DESFireCommand.DFEV1_INS_SET_CONFIGURATION.value, [0x01])
+
+        # Append key data and pad it to 24 bytes key length
+        data += list(new_key.get_key())
+        data += [0x00] * (24 - len(new_key.get_key()))
+
+        # Append key version
+        data += [key_version]
+
+        # Send the command, CRC is appended automatically but we need to exclude the first two bytes from encryption
+        self._transceive(
+            data,
+            tx_mode=DESFireCommunicationMode.ENCRYPTED,
+            rx_mode=DESFireCommunicationMode.CMAC,
+            encryption_offset=2,
+        )
 
         return
 
@@ -649,11 +683,10 @@ class DESFire:
         parameters = [parsed_appid[2], parsed_appid[1], parsed_appid[0]]
 
         # If we are authenticated, we use CMAC for communication, otherwise we use plain communication
-        communication_mode = DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN
         self._transceive(
             self._command(DESFireCommand.DF_INS_SELECT_APPLICATION.value, parameters),
-            communication_mode,
-            communication_mode,
+            DESFireCommunicationMode.PLAIN,
+            DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
 
         # if new application is selected, authentication needs to be carried out again
