@@ -162,7 +162,7 @@ class DESFireKey:
         assert self.cipher_block_size
 
         # Calculate the CRC32 checksum if needed
-        if disable_crc:
+        if not disable_crc:
             data += CRC32(data)
 
         # Pad the data to the next block size
