@@ -472,14 +472,13 @@ class DESFire:
             DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
-        # Print for now, to see what we get
-        print(toHexString(resp))
         res = KeySettings(
             application_id=self.last_selected_application or [0x0],
             key_type=DESFireKeyType(resp[1] & 0xF0),  # Only interested in first 4 bits of the second byte
             max_keys=resp[1] & 0x0F,  # Only interested in last 4 bits of the second byte
             settings=[],
         )
+        res.parse_settings(resp[0])
         return res
 
     def get_key_version(self, key_number: int) -> int:
