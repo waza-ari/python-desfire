@@ -7,9 +7,8 @@ tasks:
     cmds:
       - poetry run ruff check src --fix
       - poetry run ruff format src
+      - poetry run mypy src
 
-  copy:
+  test:
     cmds:
-      - ssh pi@192.168.178.66 "rm -rf /home/pi/.cache/pypoetry/virtualenvs/sc-test-vrU5mZZP-py3.11/lib/python3.11/site-packages/desfire/*"
-      - scp -r src/desfire/* pi@192.168.178.66:/home/pi/.cache/pypoetry/virtualenvs/sc-test-vrU5mZZP-py3.11/lib/python3.11/site-packages/desfire/
-      - scp src/mksp_test.py pi@192.168.178.66:/home/pi/sc_test/mksp.py
+      - poetry run pytest

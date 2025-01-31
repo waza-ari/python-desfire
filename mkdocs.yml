@@ -1,0 +1,52 @@
+site_name: Python DESFire
+repo_url: https://github.com/waza-ari/python-desfire
+docs_dir: docs
+theme:
+  name: "material"
+  features:
+    - content.tabs.link
+    - content.code.annotate
+    - content.code.copy
+    - announce.dismiss
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          options:
+            show_source: false
+            show_bases: false
+            docstring_options:
+              ignore_init_summary: true
+            merge_init_into_class: true
+            separate_signature: true
+            unwrap_annotated: true
+
+markdown_extensions:
+  - admonition
+  - tables
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - attr_list
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - toc:
+      toc_depth: 4
+      permalink: true
+      title: Page contents
+
+nav:
+  - index.md
+
+watch:
+  - docs
+  - src
