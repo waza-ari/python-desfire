@@ -1,12 +1,18 @@
-from pydantic import BaseModel
-
 from desfire.enums import DESFireKeySettings, DESFireKeyType
 
 
-class KeySettings(BaseModel):
-    """
-    THis schema represents settings of an application master key.
-    """
+class KeySettings:
+    def __init__(
+        self,
+        application_id: list[int] | None = None,
+        key_type: DESFireKeyType | None = None,
+        settings: list[DESFireKeySettings] | None = None,
+        max_keys: int | None = None,
+    ):
+        self.application_id = application_id
+        self.key_type = key_type
+        self.settings = settings
+        self.max_keys = max_keys
 
     """
     The application ID these settings have been retrieved for

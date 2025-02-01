@@ -1,8 +1,7 @@
 from Crypto.Util.py3compat import bchr
 
-from ..enums.desfire_keytype import DESFireKeyType
-from ..util import shift_bytes
-from .crypto import CipherFactory
+from .enums import DESFireKeyType
+from .util import get_ciphermod, shift_bytes
 
 
 class CMAC:
@@ -18,8 +17,7 @@ class CMAC:
         """
 
         self._key = key
-
-        cipher = CipherFactory.get_ciphermod(key_type, key, bchr(0) * len(key))
+        cipher = get_ciphermod(key_type, key, bchr(0) * len(key))
         self._bs = cipher.block_size
 
         # Section 5.3 of NIST SP 800 38B

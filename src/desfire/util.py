@@ -1,7 +1,10 @@
 import zlib
 from typing import Literal
 
+from Crypto.Cipher import AES, DES, DES3
 from Crypto.Util.number import bytes_to_long, long_to_bytes
+
+from .enums import DESFireKeyType
 
 
 def get_int(data: int | str | bytearray | bytes, byteorder: Literal["little", "big"] = "big") -> int:
@@ -18,7 +21,7 @@ def get_int(data: int | str | bytearray | bytes, byteorder: Literal["little", "b
 
 def get_list(
     data: str | bytearray | int | bytes, byte_size: int = 2, byteorder: Literal["little", "big"] = "big"
-) -> list[int]:  #
+) -> list[int]:
     """
     Convert a bytearray, hex string or int to a list of integers.
     """
@@ -28,19 +31,6 @@ def get_list(
         return list(data)
     elif isinstance(data, int):
         return list(data.to_bytes(byte_size, byteorder=byteorder))
-    return data
-
-
-def get_bytes(data: str | bytearray | int | bytes, byte_size: int = 2) -> bytes:
-    """
-    Convert a bytearray, hex string or int to a bytes object.
-    """
-    if isinstance(data, str):
-        return bytes(bytearray.fromhex(data))
-    elif isinstance(data, bytearray):
-        return bytes(data)
-    elif isinstance(data, int):
-        return data.to_bytes(byte_size, byteorder="big")
     return data
 
 
@@ -67,3 +57,18 @@ def xor_lists(list1: list[int], list2: list[int]) -> list[int]:
     Takes two lists and performs a bytewise xor on those lists..
     """
     return [a ^ b for a, b in zip(list1, list2)]
+
+
+def get_ciphermod(key_type: DESFireKeyType, key: bytes, iv: bytes):
+    """
+    Returns the cipher module for the given key type.
+    """
+    if key_type == DESFireKeyType.DF_KEY_AES:
+        assert len(key) == 16
+        return AES.new(key, AES.MODE_CBC, iv)
+    elif key_type == DESFireKeyType.DF_KEY_3K3DES or (key_type == DESFireKeyType.DF_KEY_2K3DES and len(key) == 16):
+        return DES3.new(key, DES3.MODE_CBC, iv)
+    elif key_type == DESFireKeyType.DF_KEY_2K3DES and len(key) == 8:
+        return DES.new(key, DES.MODE_CBC, iv)
+    else:
+        raise ValueError("Unknown key type")

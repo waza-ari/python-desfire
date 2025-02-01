@@ -5,11 +5,10 @@ from smartcard.util import toHexString
 
 from .enums import DESFireCommand, DESFireCommunicationMode, DESFireKeySettings, DESFireKeyType, DESFireStatus
 from .exceptions import DESFireAuthException, DESFireCommunicationError, DESFireException
-from .file.settings import DESFireFileSettings
-from .key.card_version import DESFireCardVersion
-from .key.key import DESFireKey
+from .key import DESFireKey
 from .pcsc import Device
-from .schemas import KeySettings
+from .schemas import FileSettings, KeySettings
+from .schemas.card_version import DESFireCardVersion
 from .util import CRC32, get_int, get_list, xor_lists
 
 
@@ -426,7 +425,7 @@ class DESFire:
         cmd = DESFireCommand.DFEV1_INS_GET_CARD_UID.value
         return self._transceive(self._command(cmd), DESFireCommunicationMode.PLAIN, DESFireCommunicationMode.ENCRYPTED)
 
-    def get_card_version(self):
+    def get_card_version(self) -> DESFireCardVersion:
         """
         Gets card version info blob
         Version info contains the UID, Batch number, production week, production year, .... of the card
@@ -782,7 +781,7 @@ class DESFire:
 
         return file_ids
 
-    def get_file_settings(self, file_id: int) -> DESFireFileSettings:
+    def get_file_settings(self, file_id: int) -> FileSettings:
         """
         Gets file settings for the File identified by file_id.
         SelectApplication needs to be called first.
@@ -803,14 +802,13 @@ class DESFire:
         )
 
         # Parse the raw data
-        file_settings = DESFireFileSettings()
+        file_settings = FileSettings()
         file_settings.parse(raw_data)
         return file_settings
 
-    def read_file_data(self, file_id: int, file_settings: DESFireFileSettings):
+    def read_file_data(self, file_id: int, file_settings: FileSettings):
         """
-        Read file data for file_id
-        SelectApplication needs to be called first
+        Read file data for file_id. SelectApplication needs to be called first
         Authentication is NOT ALWAYS needed to call this function. Depends on the application/card settings.
         """
 
@@ -820,7 +818,7 @@ class DESFire:
         assert file_settings.encryption is not None
 
         file_id_bytes = get_list(file_id, 1)
-        length = get_int(file_settings.FileSize, "big")
+        length = get_int(file_settings.file_size, "big")
         ioffset = 0
         ret = []
 

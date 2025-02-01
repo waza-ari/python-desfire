@@ -1,7 +1,7 @@
 from smartcard.util import toHexString
 
 from .enums import DESFireKeyType
-from .key.key import DESFireKey
+from .key import DESFireKey
 from .schemas import KeySettings
 
 

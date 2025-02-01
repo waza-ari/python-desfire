@@ -4,11 +4,10 @@ from smartcard.util import toHexString
 
 from desfire.schemas import KeySettings
 
-from ..enums import DESFireKeyType
-from ..exceptions import DESFireException
-from ..util import CRC32, xor_lists
 from .cmac import CMAC
-from .crypto import CipherFactory
+from .enums import DESFireKeyType
+from .exceptions import DESFireException
+from .util import CRC32, get_ciphermod, xor_lists
 
 logger = logging.getLogger(__name__)
 
@@ -103,14 +102,14 @@ class DESFireKey:
         """
         Encrypts the given data with the key and returns the encrypted data as a list of integers.
         """
-        cipher = CipherFactory.get_ciphermod(self.key_type, self.get_key(), bytes(self.iv))
+        cipher = get_ciphermod(self.key_type, self.get_key(), bytes(self.iv))
         return list(bytearray(cipher.encrypt(bytes(data))))
 
     def decrypt(self, dataEnc: list[int]) -> list[int]:
         """
         Decrypts the given data with the key and returns the decrypted data as a list of integers.
         """
-        cipher = CipherFactory.get_ciphermod(self.key_type, self.get_key(), bytes(self.iv))
+        cipher = get_ciphermod(self.key_type, self.get_key(), bytes(self.iv))
         logger.debug(f"Decrypting data: {toHexString(dataEnc)} using key type {self.key_type.name}")
         block = cipher.decrypt(bytes(dataEnc))
         return list(bytearray(block))
