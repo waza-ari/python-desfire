@@ -139,7 +139,7 @@ class DESFire:
         apdu_cmd: list[int],
         tx_mode: DESFireCommunicationMode,
         disable_crc: bool = False,
-        encryption_offset: int = 0,
+        encryption_offset: int = 1,
     ) -> list[int]:
         """
         Preprocess the command before sending it to the card.
@@ -246,7 +246,7 @@ class DESFire:
         rx_mode: DESFireCommunicationMode,
         af_passthrough: bool = False,
         disable_crc: bool = False,
-        encryption_offset: int = 0,
+        encryption_offset: int = 1,
     ) -> list[int]:
         """
         Communicate with the card. This is the main function that sends the APDU command and performs
@@ -805,7 +805,7 @@ class DESFire:
         file_settings.parse(raw_data)
         return file_settings
 
-    def read_file_data(self, file_id: int, file_settings: FileSettings):
+    def read_file_data(self, file_id: int, file_settings: FileSettings) -> list[int]:
         """
         Read file data for file_id. SelectApplication needs to be called first
         Authentication is NOT ALWAYS needed to call this function. Depends on the application/card settings.
@@ -867,6 +867,31 @@ class DESFire:
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
 
+    def write_file_data(self, file_id: int, offset: int, communication_mode: DESFireCommunicationMode, data: list[int]):
+        """
+        Writes data to the file specified by file_id
+        """
+        if not self.last_selected_application:
+            raise DESFireException("No application selected, call select_application first")
+
+        max_length = self.max_frame_size - 1 - 7  # 60 - CMD - CMD Header
+        length = len(data)
+        if length > max_length:
+            raise DESFireException(f"Data length exceeds maximum frame size of {max_length}, not supported yet.")
+
+        file_id_bytes = [file_id]
+        offset_bytes = get_list(offset, 3, "little")  # Left aligned
+        length_bytes = get_list(length, 3, "little")  # Left aligned
+
+        params = file_id_bytes + offset_bytes + length_bytes + data
+        self._transceive(
+            self._command(DESFireCommand.DF_INS_WRITE_DATA.value, params),
+            communication_mode,
+            DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
+            # Command (1 byte) + header file number (1 byte), data length (3 bytes) and offset (3 bytes)
+            encryption_offset=8,
+        )
+
     def delete_file(self, file_id: int):
         """
         Deletes the file specified by file_id
@@ -880,44 +905,3 @@ class DESFire:
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.PLAIN,
         )
-
-    ###################################################################################################################
-    ### This Function is not refactored
-    ###################################################################################################################
-
-    ###### FILE FUNTCIONS
-
-    def writeFileData(self, fileId, offset, length, data):
-        fileId = get_list(fileId, 1)
-        offset = get_int(offset, "big")
-        length = get_int(length, "big")
-        data = get_list(data)
-        ioffset = 0
-
-        while length > 0:
-            count = min(length, self.max_frame_size - 8)
-            cmd = DESFireCommand.DF_INS_WRITE_DATA.value
-            params = (
-                fileId
-                + get_list(offset + ioffset, 3, "little")
-                + get_list(count, 3, "little")
-                + data[ioffset : (ioffset + count)]
-            )
-            self.communicate(
-                self._command(cmd, params),
-                with_tx_cmac=self.is_authenticated,
-            )
-            ioffset += count
-            length -= count
-
-    def createStdDataFile(self, fileId, filePermissions, fileSize):
-        params = get_list(fileId, 1, "big")
-        params += [0x00]
-        params += get_list(filePermissions.pack(), 2, "big")
-        params += get_list(get_int(fileSize, "big"), 3, "little")
-        apdu_command = self._command(DESFireCommand.DF_INS_CREATE_STD_DATA_FILE.value, params)
-        self.communicate(
-            apdu_command,
-            with_tx_cmac=self.is_authenticated,
-        )
-        return
