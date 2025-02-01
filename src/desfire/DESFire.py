@@ -7,8 +7,7 @@ from .enums import DESFireCommand, DESFireCommunicationMode, DESFireKeySettings,
 from .exceptions import DESFireAuthException, DESFireCommunicationError, DESFireException
 from .key import DESFireKey
 from .pcsc import Device
-from .schemas import FileSettings, KeySettings
-from .schemas.card_version import DESFireCardVersion
+from .schemas import CardVersion, FilePermissions, FileSettings, KeySettings
 from .util import CRC32, get_int, get_list, xor_lists
 
 
@@ -425,7 +424,7 @@ class DESFire:
         cmd = DESFireCommand.DFEV1_INS_GET_CARD_UID.value
         return self._transceive(self._command(cmd), DESFireCommunicationMode.PLAIN, DESFireCommunicationMode.ENCRYPTED)
 
-    def get_card_version(self) -> DESFireCardVersion:
+    def get_card_version(self) -> CardVersion:
         """
         Gets card version info blob
         Version info contains the UID, Batch number, production week, production year, .... of the card
@@ -439,7 +438,7 @@ class DESFire:
             DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
-        return DESFireCardVersion(raw_data)
+        return CardVersion(raw_data)
 
     def format_card(self):
         """

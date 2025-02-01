@@ -1,7 +1,7 @@
 from smartcard.util import toHexString
 
 
-class DESFireCardVersion:
+class CardVersion:
     def __init__(self, data):
         self.raw_bytes = data
         self.hardware_vendor_id = data[0]
