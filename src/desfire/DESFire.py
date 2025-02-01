@@ -7,7 +7,7 @@ from .enums import DESFireCommand, DESFireCommunicationMode, DESFireKeySettings,
 from .exceptions import DESFireAuthException, DESFireCommunicationError, DESFireException
 from .key import DESFireKey
 from .pcsc import Device
-from .schemas import CardVersion, FilePermissions, FileSettings, KeySettings
+from .schemas import CardVersion, FileSettings, KeySettings
 from .util import CRC32, get_int, get_list, xor_lists
 
 
@@ -837,9 +837,7 @@ class DESFire:
     def create_standard_file(
         self,
         file_id: int,
-        communcation_settings: DESFireCommunicationMode,
-        access_rights: FilePermissions,
-        file_size: int,
+        file_settings: FileSettings,
     ):
         """
         Creates a standard data file in the application currently selected.
@@ -850,12 +848,15 @@ class DESFire:
         if not self.last_selected_application:
             raise DESFireException("No application selected, call select_application first")
 
-        if not 0 <= file_size <= 0xFF:
+        if not 0 <= file_settings.file_size <= 0xFF:
             raise DESFireException("File size must be between 0 and 255 (single byte)")
 
+        assert file_settings.encryption is not None
+        assert file_settings.permissions is not None
+
         data: list[int] = get_list(file_id, 1, "big")
-        data += [communcation_settings.value]
-        data += access_rights.get_permissions()
+        data += [file_settings.encryption.value]
+        data += file_settings.permissions.get_permissions()
 
         return self._transceive(
             self._command(DESFireCommand.DF_INS_CREATE_STD_DATA_FILE.value, data),
