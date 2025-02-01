@@ -5,11 +5,28 @@ from .file_permissions import FilePermissions
 
 
 class FileSettings:
-    encryption: DESFireCommunicationMode | None = None
-    file_type: DESFireFileType | None = None
-    permissions: FilePermissions | None = None
+    def __init__(
+        self,
+        encryption: DESFireCommunicationMode | None = None,
+        file_type: DESFireFileType | None = None,
+        permissions: FilePermissions | None = None,
+        file_size: int = 0,
+    ):
+        """
+        Initialize the FileSettings object
 
-    file_size = 0  # used only for MDFT_STANDARD_DATA_FILE and MDFT_BACKUP_DATA_FILE, uint32_t
+        Args:
+            encryption (DESFireCommunicationMode | None, optional): _description_. Defaults to None.
+            file_type (DESFireFileType | None, optional): _description_. Defaults to None.
+            permissions (FilePermissions | None, optional): _description_. Defaults to None.
+            file_size (int, optional): _description_. Defaults to 0.
+        """
+        self.encryption = encryption
+        self.file_type = file_type
+        self.permissions = permissions
+
+        # used only for MDFT_STANDARD_DATA_FILE and MDFT_BACKUP_DATA_FILE, uint32_t
+        self.file_size = file_size
 
     def parse(self, data):
         """
