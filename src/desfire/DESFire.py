@@ -834,6 +834,35 @@ class DESFire:
 
         return ret
 
+    def create_standard_file(
+        self,
+        file_id: int,
+        communcation_settings: DESFireCommunicationMode,
+        access_rights: FilePermissions,
+        file_size: int,
+    ):
+        """
+        Creates a standard data file in the application currently selected.
+        SelectApplication needs to be called first.
+        Authentication may be required depending on the application settings.
+        """
+
+        if not self.last_selected_application:
+            raise DESFireException("No application selected, call select_application first")
+
+        if not 0 <= file_size <= 0xFF:
+            raise DESFireException("File size must be between 0 and 255 (single byte)")
+
+        data: list[int] = get_list(file_id, 1, "big")
+        data += [communcation_settings.value]
+        data += access_rights.get_permissions()
+
+        return self._transceive(
+            self._command(DESFireCommand.DF_INS_CREATE_STD_DATA_FILE.value, data),
+            DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
+            DESFireCommunicationMode.PLAIN,
+        )
+
     def delete_file(self, file_id: int):
         """
         Deletes the file specified by file_id
