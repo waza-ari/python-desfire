@@ -858,10 +858,13 @@ class DESFire:
         data += [file_settings.encryption.value]
         data += file_settings.permissions.get_permissions()
 
+        # File size is stored in little endian
+        data += get_list(file_settings.file_size, 3, "little")
+
         return self._transceive(
             self._command(DESFireCommand.DF_INS_CREATE_STD_DATA_FILE.value, data),
-            DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.PLAIN,
+            DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
 
     def delete_file(self, file_id: int):
