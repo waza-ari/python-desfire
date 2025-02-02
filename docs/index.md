@@ -6,23 +6,31 @@ This package provides a simple interface of interacting with DESFire chips using
 It currently supports managing keys, applications and file operations, which should cover the majority of use cases.
 AES-128 is fully supported both, DES/3DES currently only receives limited testing up to the extend that is needed to change the default key and create applications.
 
-!!! warning "NDA and Accuracy"
-    Note that NXP does not release the DESFire documentation to the public, an NDA is required to obtain this information.
-    I do not have an NDA, nor do I have access to the documentation. This package as been created based on other open source
-    work, see the Credits section below for the sources that have been used.
+**Core features**:
 
-    This also means that I have limited ability to guarantee a correct implementation of all commands, especially when
-    it comes to different encryption and MAC functions. I have mainly tested AES-128 keys, if you encounter any issues,
-    pleae feel free to raise a ticket and/or submit a MR.
+- Support for **AES and ISO authentication (DES, 2K3DES and 3K3DES)**. No support for legacy authentication.
+- Full crypto support including **CMAC and CRC validation** on all commands that require it
+- **Key management** change and create keys on PICC and application leven
+- **Application management** create and delete applications
+- **File management** support for standard data files is implemented, other file types are currently not available
 
 Currently, the library has been used and tested with EV1 cards and CSL USB Reader, but other PC/SC compatible readers should work the same.
+
+!!! warning "NDA and Accuracy"
+    Note that NXP does not release the DESFire documentation to the public, NDA signature is required to obtain this information.
+    **The author of this package has not signed this NDA, nor do he has access to the documentation**.
+    This package has been created based on other open source work, see the Credits section below for the sources that have been used.
+
+    This also means that there is very limited ability to guarantee a correct implementation of all commands.
+    The package has mainly been tested using DES and AES-128 keys. If you encounter any issues, please
+    feel free to raise a ticket and/or submit an MR.
 
 ## Installation
 
 The package itself can be installed using poetry.
 
 ```bash
-poetry add python-easyverein
+poetry add TO_BE_FILLED_IN
 ```
 
 To communicate with the PC/SC smartcard reader, this package relies on `pyscard` which has some requirements.
@@ -39,6 +47,9 @@ There are two basic ways (coming from the `pyscard` dependency) on how to use th
 mode or in observer mode. The following example connects to a card, authenticates using the default key and reads
 the card UID.
 
+The most basic pattern looks like this. For more details and examples, please refer to the [usage section](usage.md)
+of this documentation.
+
 ```python
 from smartcard.CardRequest import CardRequest
 from smartcard.CardType import AnyCardType
@@ -47,6 +58,7 @@ from smartcard.util import toHexString
 
 from desfire import DESFire, DESFireKey, PCSCDevice
 
+# Use pyscard to obtain a handle to the PICC
 cardtype = AnyCardType()
 cardrequest = CardRequest(timeout=30, cardType=cardtype)
 print("Please present DESfire tag...")
@@ -59,7 +71,7 @@ except CardRequestTimeoutException:
 
 cardservice.connection.connect()
 
-# Create Desfire object, which allows further communication with then card
+# Create Desfire object, which allows further communication with the card
 desfire = DESFire(PCSCDevice(cardservice.connection.component))
 
 # Authenticate with default DES key by retrieving the key settings from the card,
@@ -71,7 +83,6 @@ desfire.authenticate(0x0, mk)
 # Get real UID
 uid = desfire.get_real_uid()
 print(toHexString(uid))
-
 ```
 
 This basic example shows two core concepts already, key management using the `KeySettings` schema and data
@@ -79,16 +90,8 @@ representation using integer lists. More details on that can be found in the ...
 
 ## Supported Commands
 
-This section gives an overview on the commands that are available on the card and whether they're supported by this package.
-
-### Card Level Commands
-
-| Code | Supported          | Command               | Note                                               |
-| ---- | ------------------ | --------------------- | -------------------------------------------------- |
-| 0x0A | :x:                | Authenticate (Legacy) | Legacy DES authentication, 8-byte key length       |
-| 0x1A | :white_check_mark: | Authenticate (ISO)    | 3DES (2 keys, 16 byte) or 3K3DES (3 keys, 24 byte) |
-| 0xAA | :white_check_mark: | Authenticate (AES)    | AES-128 (16 byte key length)                       |
-
+As outlined in the introduction, not all features and commands are currently supported.
+Please refer to the [supported commands](supported-commands.md) section for more details.
 
 ## Tests
 
@@ -97,14 +100,6 @@ Tests are making use of `pytest`, so you can simply run them by calling it. No d
 
 ```bash
 pytest
-```
-
-All features of this client are automatically tested against the actual API using pytest. If you want to run the tests
-yourself, it is advisable to create a separate demo account for that. Then, set the following environment variable to
-your API token and simply run `pytest`:
-
-```
-EV_API_KEY=<your-api-key>
 ```
 
 ## Contributing

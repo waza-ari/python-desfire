@@ -12,3 +12,7 @@ tasks:
   test:
     cmds:
       - poetry run pytest
+
+  docs:
+    cmds:
+      - poetry run mkdocs serve

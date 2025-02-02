@@ -19,10 +19,9 @@ from smartcard.CardType import AnyCardType
 from smartcard.Exceptions import CardRequestTimeoutException
 from smartcard.util import toHexString
 
-from desfire import DESFire, DESFireKey, PCSCDevice, diversify_key
+from desfire import DESFire, DESFireKey, PCSCDevice, diversify_key, get_list
 from desfire.enums import DESFireCommunicationMode, DESFireFileType, DESFireKeySettings, DESFireKeyType
 from desfire.schemas import FilePermissions, FileSettings, KeySettings
-from desfire.util import get_list
 
 # Please make sure to yet your own keys here before running this script
 MIFARE_APP_MASTER_KEY = ""  # 16 bytes AES key
@@ -143,6 +142,7 @@ print("Read and verify file settings again...")
 file_data = desfire.get_file_settings(MIFARE_ENCRYPTED_FILE_ID)
 assert file_data.file_size == 8
 assert file_data.encryption == DESFireCommunicationMode.ENCRYPTED
+assert file_data.permissions is not None
 assert file_data.permissions.read_access == MIFARE_ACL_READ_BASE_KEY_ID
 assert file_data.permissions.write_access == MIFARE_ACL_WRITE_BASE_KEY_ID
 assert file_data.file_type == DESFireFileType.MDFT_STANDARD_DATA_FILE

@@ -16,10 +16,13 @@ class FileSettings:
         Initialize the FileSettings object
 
         Args:
-            encryption (DESFireCommunicationMode | None, optional): _description_. Defaults to None.
-            file_type (DESFireFileType | None, optional): _description_. Defaults to None.
-            permissions (FilePermissions | None, optional): _description_. Defaults to None.
-            file_size (int, optional): _description_. Defaults to 0.
+            encryption (DESFireCommunicationMode | None, optional): Encryption mode that should be applied
+                to the file. Can be plain (anyone can read/write), MACed (only authenticated users can read/write)
+                or encrypted (only authenticated users can read/write).
+            file_type (DESFireFileType | None, optional): Type of the file. Currently only standard files are supported.
+            permissions (FilePermissions | None, optional): Permissions that should be applied to the file.
+                Refer to the FilePermissions class for more information.
+            file_size (int, optional): File size in bytes. Only used for standard data files.
         """
         self.encryption = encryption
         self.file_type = file_type
@@ -33,6 +36,8 @@ class FileSettings:
         Takes raw data from command 0xF5 (get file settings) and parses it into a FileSettings object.
 
         Example of a raw data from command 0xF5 (get file settings on a standard data file):
+
+        ```
         00 03 00 23 08 00 00
         ^^ ^^ ^^^^^ ^^^^^^^^
         |  |  |     |
@@ -40,12 +45,13 @@ class FileSettings:
         |  |  ^ File Permissions (2 bytes)
         |  ^ Communication / Encryption mode (1 byte)
         ^ File Type (1 byte)
+        ```
 
         File permissions are 4 bits each:
-        - 0b - 3b: Change Permission key
-        - 4b - 7b: Read-Write Permission key
-        - 8b - 11b: Write Permission key
-        - 12b - 15b: Read Permission key
+            - 0b - 3b: Change Permission key
+            - 4b - 7b: Read-Write Permission key
+            - 8b - 11b: Write Permission key
+            - 12b - 15b: Read Permission key
 
         There are four other file types that are not implemented yet.
         """

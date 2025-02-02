@@ -2,6 +2,10 @@ from desfire.enums import DESFireKeySettings, DESFireKeyType
 
 
 class KeySettings:
+    """
+    Key settings for a master key on a DESFire application.
+    """
+
     def __init__(
         self,
         application_id: list[int] | None = None,

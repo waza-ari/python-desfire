@@ -28,7 +28,7 @@ Credits
 
 The codebase of this project was based on two major projects:
 
-Elmue 
+Elmue
 ------
 
 >   who created a completely working DESFireEV1 library. (this module is based
@@ -44,7 +44,7 @@ skelsec
 >   who try to implement the code from Elmue written in C to Python. (this module is based 9% of this work)
 
 >   Url:
->   https://github.com/skelsec/pydesfire    
+>   https://github.com/skelsec/pydesfire
 
 miohtama (https://twitter.com/moo9000)
 --------------------------------------

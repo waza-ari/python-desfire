@@ -16,13 +16,10 @@ plugins:
       handlers:
         python:
           options:
-            show_source: false
-            show_bases: false
-            docstring_options:
-              ignore_init_summary: true
-            merge_init_into_class: true
+            show_source: true
             separate_signature: true
             unwrap_annotated: true
+            show_signature_annotations: true
 
 markdown_extensions:
   - admonition
@@ -46,6 +43,17 @@ markdown_extensions:
 
 nav:
   - index.md
+  - Supported Commands: supported-commands.md
+  - Using this Library: usage.md
+  - "API Reference":
+    - "Card Commands": api/desfire.md
+    - "Key Handling": api/key.md
+    - "Utility Methods": api/utility.md
+    - "ENUMs / Schemas":
+      - "Communication Mode": api/enums/communication_mode.md
+      - "File Permissions": api/enums/file_permissions.md
+      - "File Settings": api/enums/file_settings.md
+      - "Key Settings": api/enums/key_settings.md
 
 watch:
   - docs

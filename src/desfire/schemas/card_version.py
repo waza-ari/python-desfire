@@ -34,7 +34,7 @@ class CardVersion:
         temp += f"Hardware Version: {self.hardware_minor_version}.{self.hardware_minor_version}\r\n"
         temp += f"Software Version: {self.software_major_version}.{self.software_minor_version}\r\n"
         temp += f"EEPROM size:      {1 << (self.hardware_storage_size - 1)} bytes\r\n"
-        temp += f"Production :       week {self.production_date_cw:X}, year 20{self.production_date_year:02X}\r\n"
-        temp += f"UID no  : {toHexString(self.uid)}\r\n"
-        temp += f"Batch no: {toHexString(self.batch_no)}\r\n"
+        temp += f"Production:       week {self.production_date_cw:X}, year 20{self.production_date_year:02X}\r\n"
+        temp += f"UID no:           {toHexString(self.uid)}\r\n"
+        temp += f"Batch no:         {toHexString(self.batch_no)}\r\n"
         return temp

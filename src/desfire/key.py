@@ -7,12 +7,16 @@ from desfire.schemas import KeySettings
 from .cmac import CMAC
 from .enums import DESFireKeyType
 from .exceptions import DESFireException
-from .util import CRC32, get_ciphermod, xor_lists
+from .util import CRC32, get_ciphermod, get_list, xor_lists
 
 logger = logging.getLogger(__name__)
 
 
 class DESFireKey:
+    """
+    DESFire key object that is used for encryption and CMAC calculation.
+    """
+
     key_type: DESFireKeyType
     key_bytes: bytes | None = None
     key_size: int = 0
@@ -23,7 +27,18 @@ class DESFireKey:
     iv: list[int]
     iv0: list[int]
 
-    def __init__(self, settings: KeySettings, key_data: str | bytes | None = None):
+    def __init__(self, settings: KeySettings, key_data: list[int] | str | bytearray | int | bytes | None = None):
+        """
+        Initializes the DESFire key object with the given settings and key data.
+
+        Args:
+            settings (KeySettings): Key settings object, can be obtained from the card.
+            key_data (list[int] | str | bytearray | int | bytes | None, optional):
+                Key data to be set. Will be parsed using the get_list function. Defaults to None.
+
+        Raises:
+            DESFireException: If invalid key type is set or key data is not provided.
+        """
         if not settings.key_type:
             raise DESFireException("Key type must be set!")
         self.key_type = settings.key_type
@@ -85,17 +100,24 @@ class DESFireKey:
         self.set_iv(self.iv0.copy())
 
     def get_key(self) -> bytes:
+        """
+        Returns the key as a byte array.
+
+        Returns:
+            bytes: Key data as a byte array.
+        """
         assert self.key_bytes is not None
         return self.key_bytes
 
-    def set_key(self, key: str | bytes):
+    def set_key(self, key: list[int] | str | bytearray | int | bytes):
         """
-        Sets the key to the given value. Value can be either a string of HEX characters or a byte array.
+        Sets the key to the given value. Will be passed using the get_list function.
+
+        Args:
+            key (list[int] | str | bytearray | int | bytes): Key data as a list of integers,
+                a string of HEX characters, a byte array or an integer.
         """
-        if isinstance(key, str):
-            self.key_bytes = bytes(bytearray.fromhex(key))
-        else:
-            self.key_bytes = key
+        self.key_bytes = bytes(get_list(key))
         self._set_key_size(len(self.key_bytes))
 
     def encrypt(self, data: list[int]) -> list[int]:
@@ -117,7 +139,6 @@ class DESFireKey:
     def generate_cmac(self):
         """
         Generates the two subkeys mu8_Cmac1 and mu8_Cmac2 that are used for CMAC calulation with the session key
-
         Should be called after setting the key.
         """
         self.cmac = CMAC(self.key_bytes, key_type=self.key_type)

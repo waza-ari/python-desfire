@@ -20,11 +20,30 @@ def get_int(data: int | str | bytearray | bytes, byteorder: Literal["little", "b
 
 
 def get_list(
-    data: str | bytearray | int | bytes, byte_size: int = 2, byteorder: Literal["little", "big"] = "big"
+    data: list[int] | str | bytearray | int | bytes, byte_size: int = 2, byteorder: Literal["little", "big"] = "big"
 ) -> list[int]:
     """
+    Utility method to simplify the conversion of data to a list of integers.
+    Each entry in the list represents one byte of the input data.
     Convert a bytearray, hex string or int to a list of integers.
+
+    Args:
+        data (str | bytearray | int | bytes): Input that should be converted to a list of integers.
+        byte_size (int, optional): Needed when input data is of type `int`.
+            Guarantees that the list that is returned has this length.
+        byteorder (Literal[&quot;little&quot;, &quot;big&quot;], optional): Needed when input data is of type `int`.
+            Specifies the byte order that should be used when converting the integer to a list of integers.
+
+    Tip: Parsing Crypto Keys
+        This method is particularly useful when parsing keys that are represented as hex strings.
+
+    Returns:
+        A list of integers (each entry representing one byte).
     """
+    if isinstance(data, list):
+        # Already a list. Verify that each entry is an integer between 0 and 255.
+        assert all(0 <= x <= 255 for x in data)
+        return data
     if isinstance(data, str):
         return list(bytearray.fromhex(data))
     elif isinstance(data, bytearray) or isinstance(data, bytes):

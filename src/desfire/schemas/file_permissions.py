@@ -7,9 +7,9 @@ class FilePermissions:
         to obtain the corresponding access rights. Each of them is a 4-bit value, where the
         bits are as follows:
 
-        0x0 - 0xD   Key number that should be used to obtain the corresponding access rights
-        0xE         No restrictions (free access)
-        0xF         No Access allowed
+        - 0x0 - 0xD   Key number that should be used to obtain the corresponding access rights
+        - 0xE         No restrictions (free access)
+        - 0xF         No Access allowed
         """
         self.read_access = read_key & 0x0F
         self.write_access = write_key & 0x0F
@@ -23,18 +23,19 @@ class FilePermissions:
         Source:
         https://github.com/EsupPortail/esup-nfc-tag-server/blob/295aed8cbcf09323cf859fa5753b5482ce7eee3c/src/main/java/org/esupportail/nfctag/service/desfire/DESFireEV1Service.java#L1889
 
-        File permissions are (MSB = start):
-        - 0b - 3b: Read-Write key
-        - 4b - 7b: Change permission key
-        - 8b - 11b: Read key
-        - 12b - 15b: Write key
+        - File permissions are (MSB = start):
+        - - 0b - 3b: Read-Write key
+        - - 4b - 7b: Change permission key
+        - - 8b - 11b: Read key
+        - - 12b - 15b: Write key
 
-        Example Data:
-        0x00 0x23
+        Example Data: `0x00 0x23`
 
+        ```
         0000 0000 0010 0011
         ^^^^ ^^^^ ^^^^ ^^^^
         RW   C    R    W
+        ```
         """
         self.write_access = data[1] & 0x0F
         self.read_access = (data[1] >> 4) & 0x0F

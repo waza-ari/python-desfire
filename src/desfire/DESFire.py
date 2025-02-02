@@ -10,6 +10,8 @@ from .pcsc import Device
 from .schemas import CardVersion, FileSettings, KeySettings
 from .util import CRC32, get_int, get_list, xor_lists
 
+logger = logging.getLogger(__name__)
+
 
 class DESFire:
     """
@@ -22,18 +24,15 @@ class DESFire:
     last_selected_application: list[int] | None = None
     last_auth_key_id: int | None = None
 
-    def __init__(self, device: Device, logger: logging.Logger | None = None):
+    def __init__(self, device: Device):
         """
         Initializes a new DESfire object which can be used to interact with the card.
         Requires an initialized PCSC device object, refer to the examples for details and uage examples.
+
+        Args:
+            device (Device): Initialized PCSC device object
         """
         self.device = device
-
-        # Set up logging if not externally provided
-        if logger:
-            self.logger = logger
-        else:
-            self.logger = logging.getLogger(__name__)
 
     #
     # Internal Methods
@@ -59,9 +58,9 @@ class DESFire:
         # Loop until all data is received
         while additional_data:
             # Send the APDU command to the card
-            self.logger.debug("Running APDU command, sending: %s", toHexString(apdu_cmd))
+            logger.debug("Running APDU command, sending: %s", toHexString(apdu_cmd))
             resp = self.device.transceive(apdu_cmd)
-            self.logger.debug("Received APDU response: %s", toHexString(resp))
+            logger.debug("Received APDU response: %s", toHexString(resp))
 
             # DESfire native commands are used
             if native:
@@ -195,10 +194,10 @@ class DESFire:
             assert self.session_key is not None
             # Calculate the CMAC of the data
             cmac_data = response[:-8] + [0x00]
-            self.logger.debug("Calculating CMAC for data: " + toHexString(cmac_data))
+            logger.debug("Calculating CMAC for data: " + toHexString(cmac_data))
             calculated_cmac = self.session_key.calculate_cmac(cmac_data)[:8]
-            self.logger.debug("RXCMAC      : " + toHexString(response[-8:]))
-            self.logger.debug("RXCMAC_CALC : " + toHexString(calculated_cmac))
+            logger.debug("RXCMAC      : " + toHexString(response[-8:]))
+            logger.debug("RXCMAC_CALC : " + toHexString(calculated_cmac))
             if bytes(response[-8:]) != bytes(calculated_cmac):
                 raise Exception("CMAC verification failed!")
             return response[:-8]
@@ -213,9 +212,9 @@ class DESFire:
 
             # Decrypt the response
             padded_response = self._add_padding(response)
-            self.logger.debug("Padded response: " + toHexString(padded_response))
+            logger.debug("Padded response: " + toHexString(padded_response))
             decrypted_response = self.session_key.decrypt(padded_response)
-            self.logger.debug("Decrypted response: " + toHexString(decrypted_response))
+            logger.debug("Decrypted response: " + toHexString(decrypted_response))
 
             # Update IV to the last block of the encrypted data
             self.session_key.set_iv(response[-self.session_key.cipher_block_size :])
@@ -227,9 +226,9 @@ class DESFire:
             # Check if the CRC is correct - Status byte is appended to the data before CRC calculation
             crc_bytes = 4  # 2 (CRC16) is only needed for legacy authentication, which we do not support (only ISO+AES)
             received_crc = decrypted_response[-crc_bytes:]
-            self.logger.debug("Received CRC  : " + toHexString(received_crc))
+            logger.debug("Received CRC  : " + toHexString(received_crc))
             calculated_crc = CRC32(decrypted_response[:-crc_bytes] + [0x00])
-            self.logger.debug("Calculated CRC: " + toHexString(calculated_crc))
+            logger.debug("Calculated CRC: " + toHexString(calculated_crc))
 
             if bytes(received_crc) != bytes(calculated_crc):
                 raise Exception("CRC verification failed!")
@@ -287,34 +286,45 @@ class DESFire:
 
     # Authentication
 
-    def authenticate(self, key_id: int, key: DESFireKey, challenge: str | bytearray | int | bytes | None = None):
+    def authenticate(
+        self, key_id: int, key: DESFireKey, challenge: list[int] | str | bytearray | int | bytes | None = None
+    ):
         """
         Authenticate against the currently selected application with key_id.
-        Authentication is NEVER needed to call this function.
+        If no application has been selected before, the default (master) application is used, which is `0x00`.
+        In this case, only key `0x00` can be used for authentication.
 
-        :param key_id: Key ID to authenticate with
-        :type key_id: int
-        :param key: The DESFireKey instance used for authentication
-        :type key: DESFireKey
-        :param challenge: The challenge supplied by the reader to the card on the challenge-response authentication.
-            It will determine half of the session Key bytes (optional)
-        :type challenge: str | None
+        Authentication:
+            Not required.
+
+        Args:
+            key_id (int): Key ID to authenticate with. Must be `0x00` if no application is selected.
+            key (DESFireKey): Instance of the DESFireKey class containing the key data that is used to authenticate.
+            challenge (list[int] | str | bytearray | int | bytes | None, optional): During the handshake process,
+                the card will respond with a randomly generated challenge and then expects this device to answer with a
+                random challenge as well. This challenge can be provided, it is not recommended though.
+                Data passed will be parsed using the `get_list` function.
+
+        Raises:
+            DESFireException: if an invalid configuration is provided
+            DESFireAuthException: If authentication fails
         """
+
         assert key.cipher_block_size is not None
-        self.logger.debug("Authenticating")
+        logger.debug("Authenticating")
         self.is_authenticated = False
 
         # Determine the authentication command based on the key type
         if key.key_type == DESFireKeyType.DF_KEY_AES:
-            self.logger.debug("Authenticating with AES key")
+            logger.debug("Authenticating with AES key")
             cmd = DESFireCommand.AUTHENTICATE_AES.value
             params = [key_id]
         elif key.key_type == DESFireKeyType.DF_KEY_2K3DES or key.key_type == DESFireKeyType.DF_KEY_3K3DES:
-            self.logger.debug("Authenticating with DES/3DES key")
+            logger.debug("Authenticating with DES/3DES key")
             cmd = DESFireCommand.AUTHENTICATE_ISO.value
             params = [key_id]
         else:
-            raise Exception("Invalid key type!")
+            raise DESFireException("Invalid key type has been provided.")
 
         # First part of three way handshake - Initial authentication and retrieve RND_B from card
         # AF_Passthrough is required as the card will respond with 0xAF as challenge response
@@ -324,13 +334,13 @@ class DESFire:
             DESFireCommunicationMode.PLAIN,
             af_passthrough=True,
         )
-        self.logger.debug("Random B (enc):" + toHexString(RndB_enc))
+        logger.debug("Random B (enc):" + toHexString(RndB_enc))
 
         # Check if the key type is correct
         if (key.key_type == DESFireKeyType.DF_KEY_3K3DES or key.key_type == DESFireKeyType.DF_KEY_AES) and len(
             RndB_enc
         ) != 16:
-            raise DESFireAuthException(
+            raise DESFireException(
                 "Card expects a different key type. (enc B size is less than the blocksize of the key you specified)"
             )
 
@@ -339,25 +349,25 @@ class DESFire:
 
         # Decrypt the RndB using the provided master key
         RndB = key.decrypt(RndB_enc)
-        self.logger.debug("Random B (dec): " + toHexString(RndB))
+        logger.debug("Random B (dec): " + toHexString(RndB))
 
         # Rotate RndB to the left by one byte
         RndB_rot = RndB[1:] + [RndB[0]]
-        self.logger.debug("Random B (dec, rot): " + toHexString(RndB_rot))
+        logger.debug("Random B (dec, rot): " + toHexString(RndB_rot))
 
         # Challenge can be either provided externally, or generated randomly
         if challenge is not None:
             RndA = get_list(challenge)
         else:
             RndA = get_list(get_random_bytes(len(RndB)))
-        self.logger.debug("Random A: " + toHexString(RndA))
+        logger.debug("Random A: " + toHexString(RndA))
 
         # Concatenate RndA and RndB_rot and encrypt it with the master key
         RndAB = list(RndA) + RndB_rot
-        self.logger.debug("Random AB: " + toHexString(RndAB))
+        logger.debug("Random AB: " + toHexString(RndAB))
         key.set_iv(RndB_enc)
         RndAB_enc = key.encrypt(RndAB)
-        self.logger.debug("Random AB (enc): " + toHexString(RndAB_enc))
+        logger.debug("Random AB (enc): " + toHexString(RndAB_enc))
 
         # Send the encrypted RndAB to the card, it should reply with a positive result
         params = RndAB_enc
@@ -367,21 +377,21 @@ class DESFire:
         )
 
         # Verify that the response matches our original challenge
-        self.logger.debug("Random A (enc): " + toHexString(RndA_enc))
+        logger.debug("Random A (enc): " + toHexString(RndA_enc))
         key.set_iv(RndAB_enc[-key.cipher_block_size :])
         RndA_dec = key.decrypt(RndA_enc)
-        self.logger.debug("Random A (dec): " + toHexString(RndA_dec))
+        logger.debug("Random A (dec): " + toHexString(RndA_dec))
         RndA_dec_rot = RndA_dec[-1:] + RndA_dec[0:-1]
-        self.logger.debug("Random A (dec, rot): " + toHexString(RndA_dec_rot))
+        logger.debug("Random A (dec, rot): " + toHexString(RndA_dec_rot))
 
         if bytes(RndA) != bytes(RndA_dec_rot):
-            raise Exception("Authentication FAILED!")
+            raise DESFireAuthException("Authentication FAILED!")
 
-        self.logger.debug("Authentication success!")
+        logger.debug("Authentication success!")
         self.is_authenticated = True
         self.last_auth_key_id = key_id
 
-        self.logger.debug("Calculating Session key")
+        logger.debug("Calculating Session key")
         session_key_bytes = RndA[:4]
         session_key_bytes += RndB[:4]
         if key.key_size > 8:
@@ -414,25 +424,44 @@ class DESFire:
 
     def get_real_uid(self) -> list[int]:
         """
-        Gets the real UID of the card. This function requires authentication, any key can be used.
+        Depending on the card configuration, the UID returned using `get_card_version` can be random.
+        This command returns the real UID of the card.
+
+        Authentication:
+            Required
+
+        Raises:
+            DESFireException: if an invalid configuration is provided
+
+        Returns:
+            list[int]: 7 byte UID of the card
         """
-        self.logger.debug("Getting real card UID")
+        logger.debug("Getting real card UID")
 
         if not self.is_authenticated:
-            raise Exception("Not authenticated!")
+            raise DESFireException("Not authenticated!")
 
         cmd = DESFireCommand.GET_CARD_UID.value
         return self._transceive(self._command(cmd), DESFireCommunicationMode.PLAIN, DESFireCommunicationMode.ENCRYPTED)
 
     def get_card_version(self) -> CardVersion:
         """
-        Gets card version info blob
-        Version info contains the UID, Batch number, production week, production year, .... of the card
-        Authentication is NOT needed to call this function
-        BEWARE: DESFire card has a security feature called "Random UID" which means that without authentication it will
-            give you a random UID each time you call this function!
+        Gets the card version data, which contains information about the card such as the UID, batch number, etc.
+
+        Authentication:
+            Not required.
+
+        !!! warning
+            DESFire cards have a security feature called "Random UID" which can be activated.
+            If active, the PICC will will return a random UID each time you call this function.
+
+        Returns:
+            CardVersion: An instance of the CardVersion schema containing the card version information
+
+        Raises:
+            DESFireException: if an invalid configuration is provided
         """
-        self.logger.debug("Getting card version info")
+        logger.debug("Getting card version info")
         raw_data = self._transceive(
             self._command(DESFireCommand.GET_VERSION.value),
             DESFireCommunicationMode.PLAIN,
@@ -442,11 +471,22 @@ class DESFire:
 
     def format_card(self):
         """
-        Formats the card
-        WARNING! THIS COMPLETELY WIPES THE CARD AND RESETS IF TO A BLANK CARD!!
-        Authentication using the App 0 master key is needed to call this function
+        Formats the card, deleting all keys, applications and files on the card.
+
+        Authentication:
+            Authentication using the application `0x00` master key (key id `0x00`) is required
+
+        !!! warning
+            THIS COMPLETELY WIPES THE CARD AND RESETS IT TO A BLANK CARD!!
+
+        Raises:
+            DESFireException: if an invalid configuration is provided
         """
-        self.logger.debug("Formatting card")
+
+        if not self.is_authenticated:
+            raise DESFireException("Not authenticated!")
+
+        logger.debug("Formatting card")
         cmd = DESFireCommand.FORMAT_PICC.value
         self._transceive(self._command(cmd), DESFireCommunicationMode.PLAIN, DESFireCommunicationMode.PLAIN)
 
@@ -461,15 +501,20 @@ class DESFire:
         It returns two bytes, where the first byte contains the key settings for the current application
         as described in the change_key_settings method. The second byte is structured as follows:
 
+        ```
         KKKK|DDDD
         7       0
+        ```
 
-        K: Determines the key type as defined in the DESFireKeyType enum
-        D: Maximum number of keys that are allowed by the application
+        - K: Determines the key type as defined in the DESFireKeyType enum
+        - D: Maximum number of keys that are allowed by the application. Always 1 for the main appliction (0x0).
 
-        D seems to be always 1 for the main appliction (0x0).
+        Authentication:
+            Not required.
 
-        CMAC is used for communication if authenticated, otherwise plain communication is used.
+        Returns:
+            KeySettings: An instance of the KeySettings schema containing the key settings. Can be
+                used to authenticate using this key or another key of the same application.
         """
         resp = self._transceive(
             self._command(DESFireCommand.GET_KEY_SETTINGS.value),
@@ -487,14 +532,19 @@ class DESFire:
 
     def get_key_version(self, key_number: int) -> int:
         """
-        Returns the version of the key, which is a one byte identifier that can be set when the key is created.
+        Returns the version of the key, which is a one byte that can be set when the key is created.
         It is typically used to distinguish between different versions of the same key in use.
 
-        Authentication is ALWAYS needed to call this function.
+        Authentication:
+            Required.
 
-        Returns a single byte containing the custom version information.
+        Args:
+            key_number (int): Number of the key to get the version from. Must be between 0x00 and 0x0D.
+
+        Returns:
+            int: Single byte containing the custom version information.
         """
-        self.logger.debug(f"Getting key version for keyid {key_number:x}")
+        logger.debug(f"Getting key version for keyid {key_number:x}")
 
         params = get_list(key_number, 1, "big")
         cmd = DESFireCommand.GET_KEY_VERSION.value
@@ -509,25 +559,47 @@ class DESFire:
     def change_key_settings(self, new_settings: list[DESFireKeySettings]):
         """
         Changes key settings for the application currently selected.
-        Authentication is ALWAYS needed to call this function.
 
-        Note that the key settings depend on the application that is currently selected.
-        Settings are represented as one byte, which is structures as follows:
+        Authentication:
+            Required.
 
-        FFFF|AAAA
-        0       7
+        !!! note "Key settings details"
+            Note that the key settings depend on the application that is currently selected.
+            Settings are represented as one byte, which is structures as follows:
 
-        The first four bits are flags which control certain settings, such as whether creating and deleting
-        applications requires authentication or not. Refer to DESFireKeySettings for more information.
+            ```
+            FFFF | AAAA
+            0         7
+            ```
 
-        WARNING: Bit 3 (frozen settings) cannot be cleared once it is set.
+            The first four bits are flags which control certain settings, such as whether creating and deleting
+            applications requires authentication or not. Refer to DESFireKeySettings for more information.
 
-        The last four bits are only relevant for applications and determine how keys can be changed. Values below
-        are represented in hex:
+            !!! warning
+                Bit 3 (frozen settings) cannot be cleared once it is set.
 
-        - 0x0 - 0xD: This specific key can change any key
-        - 0xE: Only the key that was used for authentication can be changed
-        - 0xF: All keys are locked (except master key, this is controlled by a flag as documented above)
+            The last four bits are only relevant for applications and determine how keys can be changed. Values below
+            are represented in hex:
+
+            - 0x0 - 0xD: This specific key can change any key
+            - 0xE: Only the key that was used for authentication can be changed
+            - 0xF: All keys are locked (except master key, this is controlled by a flag as documented above)
+
+        Example:
+
+        You can use the provided enum (DESFireKeySettings) to set the key settings. For example, to allow
+        a change of keys with the app master key, you can use the following code:
+
+        ```python
+        change_key_settings([DESFireKeySettings.KS_CHANGE_KEY_WITH_MK])
+        ```
+
+        Args:
+            new_settings (list[DESFireKeySettings]): List of key settings to apply to the application.
+                Refer to the DESFireKeySettings enum for possible values.
+
+        Raises:
+            DESFireException: if an invalid configuration is provided
         """
 
         if not self.is_authenticated:
@@ -537,7 +609,7 @@ class DESFire:
             settings=new_settings,
         )
 
-        # self.logger.debug('Changing key settings to %s' %('|'.join(a.name for a in newKeySettings),))
+        # logger.debug('Changing key settings to %s' %('|'.join(a.name for a in newKeySettings),))
         self._transceive(
             self._command(DESFireCommand.CHANGE_KEY_SETTINGS.value, [key_settings.get_settings()]),
             DESFireCommunicationMode.ENCRYPTED,
@@ -546,22 +618,35 @@ class DESFire:
 
     def change_key(self, key_id: int, current_key: DESFireKey, new_key: DESFireKey, new_key_version: int | None = None):
         """
-        Changes current key (curKey) to a new one (newKey) in specified keyslot (keyno)
-        Authentication is ALWAYS needed to call this function.
+        Changes a key from a current value to a new value. If the key is the one currently used for authentication,
+        the authentication session is invalidated.
+
+        Authentication:
+            Required.
+
+        Args:
+            key_id (int): ID of the key to change. Can also be the key that is currently used for authentication.
+            current_key (DESFireKey): Key that is currently in use.
+            new_key (DESFireKey): New key to set.
+            new_key_version (int | None, optional): Optionally you can set a version for the new key. It is
+                for information purposes only and can be used to distinguish between different versions of a key.
+
+        Raises:
+            DESFireException: if an invalid configuration is provided
         """
 
-        self.logger.debug(f" -- Changing key {key_id} --")
+        logger.debug(f" -- Changing key {key_id} --")
 
         if not self.is_authenticated:
             raise DESFireException("Not authenticated!")
 
-        self.logger.debug("curKey : " + toHexString(list(current_key.get_key())))
-        self.logger.debug("newKey : " + toHexString(list(new_key.get_key())))
+        logger.debug("curKey : " + toHexString(list(current_key.get_key())))
+        logger.debug("newKey : " + toHexString(list(new_key.get_key())))
 
         # If we're changing the key we're authenticated with, the message format
         # is different than if we're changing a different key.
         is_same_key = key_id == self.last_auth_key_id
-        self.logger.info(f"Are we changing the key we're authenticated with: {is_same_key}")
+        logger.info(f"Are we changing the key we're authenticated with: {is_same_key}")
 
         # Calculate the key number parameter
         # The key_no parameter has 4 bits (MSB, key type) + 4 bits (LSB, key number).
@@ -617,9 +702,17 @@ class DESFire:
 
     def change_default_key(self, new_key: DESFireKey, key_version: int = 0):
         """
-        The default key is used as application master key when creating new applications
+        Allows changing the default key that is used as application master key when creating new applications.
 
-        Uses command 0x5C01
+        Authentication:
+            Required.
+
+        Args:
+            new_key (DESFireKey): New key to set as the default key.
+            key_version (int, optional): Key version to set when using this key.
+
+        Raises:
+            DESFireException: if an invalid configuration is provided
         """
 
         if not self.is_authenticated:
@@ -651,10 +744,15 @@ class DESFire:
 
     def get_application_ids(self) -> list[list[int]]:
         """
-        Lists all application on the card. Authentication is NOT needed to call this function
-        Returns a list of application IDs, in a 4 byte hex form
+        Lists all application currently configured on the card.
+
+        Authentication:
+            Not required.
+
+        Returns:
+            list[list[int]]: List of application IDs, in a 4 byte hex form
         """
-        self.logger.debug("Fetching application IDs")
+        logger.debug("Fetching application IDs")
 
         raw_data = self._transceive(
             self._command(DESFireCommand.GET_APPLICATION_IDS.value),
@@ -666,19 +764,26 @@ class DESFire:
         apps = []
         while pointer < len(raw_data):
             appid = [raw_data[pointer + 2]] + [raw_data[pointer + 1]] + [raw_data[pointer]]
-            self.logger.debug("Reading %s", toHexString(appid))
+            logger.debug("Reading %s", toHexString(appid))
             apps.append(appid)
             pointer += 3
 
         return apps
 
-    def select_application(self, appid: str | bytearray | bytes | int):
+    def select_application(self, appid: list[int] | str | bytearray | int | bytes):
         """
         Choose application on a card on which all the following commands will apply.
-        Authentication is NOT ALWAYS needed to call this function. Depends on the application settings.
+
+        Authentication:
+            MAY be required depending on the application settings.
+
+        Args:
+            appid (list[int] | str | bytearray | int | bytes): ID of the application.
+                Will be converted using the `get_list` function.
         """
+
         parsed_appid = get_list(appid, 3, "big")
-        self.logger.debug(f"Selecting application with AppID {toHexString(parsed_appid)}")
+        logger.debug(f"Selecting application with AppID {toHexString(parsed_appid)}")
 
         # TODO: Check why this is reversed after parsing the list big endian above
         parameters = [parsed_appid[2], parsed_appid[1], parsed_appid[0]]
@@ -695,25 +800,38 @@ class DESFire:
         self.last_auth_key_id = None
         self.last_selected_application = parsed_appid
 
-    def create_application(self, appid: list[int] | str, keysettings: KeySettings, keycount: int):
+    def create_application(
+        self, appid: list[int] | str | bytearray | int | bytes, keysettings: KeySettings, keycount: int
+    ):
         """
-        Creates application on the card with the specified settings
-        Authentication is ALWAYS needed before calling this function.
+        Creates a new application on the card with the specified settings. The key settings provided are
+        applied to the master key of the application.
+
+        Authentication:
+            Required.
+
+        Args:
+            appid (list[int] | str | bytearray | int | bytes): 3 byte application ID.
+                Will be converted using `get_list`.
+            keysettings (KeySettings): Key settings to apply to the application.
+            keycount (int): Number of keys that can be stored in the application.
+
+        Raises:
+            DESFireException: if an invalid configuration is provided
         """
 
         if not self.is_authenticated:
-            raise Exception("Not authenticated!")
+            raise DESFireException("Not authenticated!")
 
         if not keysettings.settings or not keysettings.key_type:
-            raise Exception("The key type and key settings must be set in the KeySettings object.")
+            raise DESFireException("The key type and key settings must be set in the KeySettings object.")
 
         if not 0 <= keycount <= 14:
-            raise Exception("Key count must be between 0 and 14.")
+            raise DESFireException("Key count must be between 0 and 14.")
 
-        if isinstance(appid, str):
-            appid = get_list(appid, 2, "big")
+        appid = get_list(appid, 3, "big")
 
-        self.logger.debug(f"Creating application with appid: {toHexString(appid)}, ")
+        logger.debug(f"Creating application with appid: {toHexString(appid)}, ")
 
         # Structure of the APDU:
         # 0xCA + AppID (3 bytes) + key settings (1 byte) + app settings (4 MSB = key type, 4 LSB = key count)
@@ -725,19 +843,26 @@ class DESFire:
             DESFireCommunicationMode.CMAC,
         )
 
-    def deleteApplication(self, appid: list[int] | str):
+    def deleteApplication(self, appid: list[int] | str | bytearray | int | bytes):
         """
         Deletes the application specified by appid
-        Authentication is ALWAYS needed to call this function.
+
+        Authentication:
+            Required.
+
+        Args:
+            appid (list[int] | str | bytearray | int | bytes): 3 byte application ID. Will be converted using `get_list`
+
+        Raises:
+            DESFireException: if an invalid configuration is provided
         """
 
         if not self.is_authenticated:
-            raise Exception("Not authenticated!")
+            raise DESFireException("Not authenticated!")
 
-        if isinstance(appid, str):
-            appid = get_list(appid, 2, "big")
+        appid = get_list(appid, 3, "big")
 
-        self.logger.debug("Deleting application for AppID %s", toHexString(appid))
+        logger.debug("Deleting application for AppID %s", toHexString(appid))
 
         appid.reverse()
 
@@ -751,17 +876,24 @@ class DESFire:
     ## File related
     #
 
-    def get_file_ids(self):
+    def get_file_ids(self) -> list[int]:
         """
-        Lists all files belonging to the application currently selected.
-        SelectApplication needs to be called first
-        Authentication is NOT ALWAYS needed to call this function. Depends on the application/card settings.
+        Lists all files belonging to the application currently selected. `select_application` needs to be called first
+
+        Authentication:
+            MAY be required depending on the application settings.
+
+        Returns:
+            List of file IDs in the application
+
+        Raises:
+            DESFireException: if an invalid configuration is provided
         """
 
         if not self.last_selected_application:
             raise DESFireException("No application selected, call select_application first")
 
-        self.logger.debug("Enumerating all files for the selected application")
+        logger.debug("Enumerating all files for the selected application")
         file_ids = []
 
         raw_data = self._transceive(
@@ -772,26 +904,37 @@ class DESFire:
 
         # Parse the raw data
         if len(raw_data) == 0:
-            self.logger.debug("No files found")
+            logger.debug("No files found")
         else:
             for byte in raw_data:
                 file_ids.append(byte)
-            self.logger.debug(f"File ids: {''.join([toHexString([id]) for id in file_ids])}")
+            logger.debug(f"File ids: {''.join([toHexString([id]) for id in file_ids])}")
 
         return file_ids
 
     def get_file_settings(self, file_id: int) -> FileSettings:
         """
-        Gets file settings for the File identified by file_id.
-        SelectApplication needs to be called first.
+        Gets file settings for the file identified by file_id. `select_application` must be called first.
         Authentication is NOT ALWAYS needed to call this function. Depends on the application/card settings.
+
+        Args:
+            file_id (int): ID of the file to get the settings for.
+
+        Authentication:
+            MAY be required depending on the application settings.
+
+        Returns:
+            Instance of the FileSettings schema containing the parsed file settings
+
+        Raises:
+            DESFireException: if an invalid configuration is provided
         """
 
         if not self.last_selected_application:
             raise DESFireException("No application selected, call select_application first")
 
         file_id_bytes = get_list(file_id, 1, "big")
-        self.logger.debug(f"Getting file settings for file {toHexString(file_id_bytes)}")
+        logger.debug(f"Getting file settings for file {toHexString(file_id_bytes)}")
 
         # Get the file settings
         raw_data = raw_data = self._transceive(
@@ -809,6 +952,20 @@ class DESFire:
         """
         Read file data for file_id. SelectApplication needs to be called first
         Authentication is NOT ALWAYS needed to call this function. Depends on the application/card settings.
+
+        Args:
+            file_id (int): ID of the file to get the settings for.
+            file_settings (FileSettings): Instance of the FileSettings schema containing the file settings.
+                Can be obtained using the `get_file_settings` method.
+
+        Authentication:
+            MAY be required depending on the application settings.
+
+        Raises:
+            DESFireException: if an invalid configuration is provided
+
+        Returns:
+            list[int]: Raw data read from the file
         """
 
         if not self.last_selected_application:
@@ -834,15 +991,20 @@ class DESFire:
 
         return ret
 
-    def create_standard_file(
-        self,
-        file_id: int,
-        file_settings: FileSettings,
-    ):
+    def create_standard_file(self, file_id: int, file_settings: FileSettings):
         """
-        Creates a standard data file in the application currently selected.
-        SelectApplication needs to be called first.
-        Authentication may be required depending on the application settings.
+        Creates a standard data file in the application currently selected. `select_application` must be called first.
+
+        Authentication:
+            MAY be required depending on the application settings.
+
+        Args:
+            file_id (int): ID of the file to get the settings for.
+            file_settings (FileSettings): Instance of the FileSettings schema containing the file settings that
+                should be applied to the file.
+
+        Raises:
+            DESFireException: if an invalid configuration is provided
         """
 
         if not self.last_selected_application:
@@ -861,7 +1023,7 @@ class DESFire:
         # File size is stored in little endian
         data += get_list(file_settings.file_size, 3, "little")
 
-        return self._transceive(
+        self._transceive(
             self._command(DESFireCommand.CREATE_STD_DATA_FILE.value, data),
             DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
@@ -870,6 +1032,23 @@ class DESFire:
     def write_file_data(self, file_id: int, offset: int, communication_mode: DESFireCommunicationMode, data: list[int]):
         """
         Writes data to the file specified by file_id
+
+        Authentication:
+            MAY be required depending on the application settings.
+
+        Args:
+            file_id (int): ID of the file to get the settings for.
+            offset (int): Offset in the file to write the data to.
+            communication_mode (DESFireCommunicationMode): Communication mode to use for the data transfer.
+                Depends on the file settings that were applied when creating the file.
+            data (list[int]): Data to write to the file.
+
+        !!! warning
+            The data length must not exceed the maximum frame size of 60 bytes.
+            It is possible to write longer data, but this is currently not implemented in this library.
+
+        Raises:
+            DESFireException: if an invalid configuration is provided
         """
         if not self.last_selected_application:
             raise DESFireException("No application selected, call select_application first")
@@ -895,12 +1074,21 @@ class DESFire:
     def delete_file(self, file_id: int):
         """
         Deletes the file specified by file_id
+
+        Authentication:
+            MAY be required depending on the application settings.
+
+        Args:
+            file_id (int): ID of the file to get the settings for.
+
+        Raises:
+            DESFireException: if an invalid configuration is provided
         """
 
         if not self.last_selected_application:
             raise DESFireException("No application selected, call select_application first")
 
-        return self._transceive(
+        self._transceive(
             self._command(DESFireCommand.DELETE_FILE.value, get_list(file_id, 1, "little")),
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.PLAIN,
