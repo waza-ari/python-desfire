@@ -39,21 +39,27 @@ class DESFireKey:
         Raises:
             DESFireException: If invalid key type is set or key data is not provided.
         """
+        logger.debug(f"Initializing key with settings: {settings}")
+
         if not settings.key_type:
-            raise DESFireException("Key type must be set!")
+            logger.error("Key type must be set in the key settings object.")
+            raise DESFireException("Key type must be set in the key settings object.")
+
         self.key_type = settings.key_type
         if key_data:
+            logger.debug("Key data has been provided.")
             self.set_key(key_data)
         self.cipher_init()
 
     # Internal methods
     def _set_key_size(self, key_size: int):
+        logger.debug(f"Setting key size to {key_size}")
         self.cipher_block_size = key_size
         self.key_size = key_size
         self.iv0 = [0] * key_size
 
     def set_iv(self, iv: list[int]):
-        print("Setting IV to", toHexString(iv))
+        logger.debug(f"Setting IV to {toHexString(iv)}")
         self.iv = iv
 
     def cipher_init(self):
@@ -61,28 +67,35 @@ class DESFireKey:
         Initializes the cipher object for this key depending on the chosen key type
         """
 
+        logger.info(f"Initializing cipher with key type {self.key_type.name}")
+
         # If the key size is not set, we assume it is 8 bytes
         if self.key_size == 0:
             self._set_key_size(8 if not self.key_bytes else len(self.key_bytes))
 
         # Depending on the key type, set cipher related variables
         if self.key_type == DESFireKeyType.DF_KEY_AES:
+            logger.debug("AES key type detected, setting key size to 16 bytes")
             self._set_key_size(16)
             self.cipher_block_size = 16
         elif self.key_type == DESFireKeyType.DF_KEY_2K3DES:
             # DES is used
             if self.key_size == 8:
+                logger.debug("Regular DES key type detected, setting key size to 8 bytes")
                 self.cipher_block_size = 8
             # 2DES is used (3DES with 2 keys only)
             elif self.key_size == 16:
+                logger.debug("2K3DES key type detected, setting key size to 16 bytes")
                 self.cipher_block_size = 8
             else:
                 raise DESFireException("Key length error! When using 2K3DES, the key must be 8 or 16 bytes long.")
         elif self.key_type == DESFireKeyType.DF_KEY_3K3DES:
+            logger.debug("3K3DES key type detected, setting key size to 24 bytes")
             assert self.key_size == 24
             self.cipher_block_size = 8
         else:
-            raise DESFireException("Unknown key type!")
+            logger.error("Unknown key type detected.")
+            raise DESFireException("Unknown key type.")
 
         # Initialize the key to a default value if it is not set
         if self.key_bytes is None:
@@ -97,6 +110,7 @@ class DESFireKey:
         """
         Resets the IV to all zero bytes.
         """
+        logger.debug("Clearing IV back to default value.")
         self.set_iv(self.iv0.copy())
 
     def get_key(self) -> bytes:
@@ -117,6 +131,7 @@ class DESFireKey:
             key (list[int] | str | bytearray | int | bytes): Key data as a list of integers,
                 a string of HEX characters, a byte array or an integer.
         """
+        logger.debug("Setting key value to provided data")
         self.key_bytes = bytes(get_list(key))
         self._set_key_size(len(self.key_bytes))
 
@@ -154,6 +169,7 @@ class DESFireKey:
         assert self.cipher_block_size is not None
 
         # Calculate the CMAC
+        logger.debug(f"Calculating CMAC for data: {toHexString(data)}")
         ndata = data.copy()
         padded: bool = pre_padded
 
@@ -162,14 +178,24 @@ class DESFireKey:
             ndata += [self.cmac.PADDING_CONSTANT] + [0x00] * (
                 self.cipher_block_size - len(ndata) % self.cipher_block_size - 1
             )
+            logger.debug(f"Padding data to block size: {toHexString(ndata)}")
             padded = True
 
         # XOR the last block with k1 or k2, depending on the padding
-        key_to_use = self.cmac.k2 if padded else self.cmac.k1
+        if padded:
+            key_to_use = self.cmac.k2
+            logger.debug("Using k2 for XOR as padding was applied.")
+        else:
+            key_to_use = self.cmac.k1
+            logger.debug("Using k1 for XOR as no padding was applied.")
+
+        # XOR the last block with the key
         xor_data = ndata[0 : -self.cipher_block_size] + xor_lists(ndata[-self.cipher_block_size :], key_to_use)
+        logger.debug(f"XOR data: {toHexString(xor_data)}")
 
         # Encrypt the padded data
         ret = self.encrypt(xor_data)
+        logger.debug(f"Encrypted data: {toHexString(ret)}")
 
         # Update the IV with the last block of the encrypted data
         self.set_iv(ret[-self.cipher_block_size :])

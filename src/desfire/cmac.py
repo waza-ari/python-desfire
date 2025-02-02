@@ -1,7 +1,11 @@
+import logging
+
 from Crypto.Util.py3compat import bchr
 
 from .enums import DESFireKeyType
 from .util import get_ciphermod, shift_bytes
+
+logger = logging.getLogger(__name__)
 
 
 class CMAC:
@@ -16,6 +20,8 @@ class CMAC:
         Initialize the CMAC object with a key and a cipher module.
         """
 
+        logger.debug("Initializing CMAC with provided key. Calculating K1 and K2.")
+
         self._key = key
         cipher = get_ciphermod(key_type, key, bchr(0) * len(key))
         self._bs = cipher.block_size
@@ -26,6 +32,7 @@ class CMAC:
         elif self._bs == 16:
             const_Rb = 0x87
         else:
+            logger.error(f"CMAC requires a cipher with a block size of 8 or 16 bytes, not {self._bs}")
             raise TypeError(f"CMAC requires a cipher with a block size of 8 or 16 bytes, not {self._bs}")
 
         # Encrypt a block of zeros with IV of zeros and the session key
