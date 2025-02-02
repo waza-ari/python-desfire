@@ -68,7 +68,7 @@ pages:
   stage: docs
   image: python:3.13-alpine
   only:
-    - master
+    - tags
   script: 
     - apk add gcc libc-dev libffi-dev
     - pip install poetry
