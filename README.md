@@ -22,8 +22,8 @@ Currently, the library has been used and tested with EV1 cards and CSL USB Reade
 
 !!! warning "NDA and Accuracy"
     Note that NXP does not release the DESFire documentation to the public, NDA signature is required to obtain this information.
-    **The author of this package has not signed this NDA, nor do he has access to the documentation**.
-    This package has been created based on other open source work, see the Credits section below for the sources that have been used.
+    **The author of this package has not signed this NDA, nor does he have access to the documentation**.
+    This package has been created based on other open source work, see the Credits section below for details.
 
     This also means that there is very limited ability to guarantee a correct implementation of all commands.
     The package has mainly been tested using DES and AES-128 keys. If you encounter any issues, please
