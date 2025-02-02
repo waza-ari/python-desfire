@@ -40,6 +40,22 @@ ruff-format:
       - pip install ruff
       - ruff format src
 
+check-version:
+  stage: linting
+  image: python:3.13-alpine
+  script:
+    - apk add gcc libc-dev libffi-dev
+    - pip install poetry
+    - version=$(poetry version -s)
+    - |
+      if [[ "${CI_COMMIT_TAG}" != "${version}" ]]; then
+          echo "Tag '${CI_COMMIT_TAG}' does not match the expected version '${version}'"
+          exit 1
+      fi
+    - echo "OK"
+  only:
+    - tags
+
 type-check:
   extends: .lint-base
   allow_failure: true
