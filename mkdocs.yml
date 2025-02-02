@@ -1,6 +1,7 @@
 site_name: Python DESFire
 repo_url: https://github.com/waza-ari/python-desfire
 docs_dir: docs
+site_dir: public
 theme:
   name: "material"
   features:

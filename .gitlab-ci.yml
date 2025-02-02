@@ -12,6 +12,7 @@ cache:
 stages:
   - linting
   - build
+  - docs
 
 .lint-base:
   stage: linting
@@ -62,3 +63,18 @@ build:
     - poetry config repositories.gitlab "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi"
     - poetry config http-basic.gitlab gitlab-ci-token "$CI_JOB_TOKEN"
     - poetry publish --repository gitlab
+
+pages:
+  stage: docs
+  image: python:3.13-alpine
+  only:
+    - master
+  script: 
+    - apk add gcc libc-dev libffi-dev
+    - pip install poetry
+    - poetry config virtualenvs.create false
+    - poetry install --only dev --no-root
+    - poetry run mkdocs build --strict --verbose
+  artifacts:
+    paths:
+    - public
