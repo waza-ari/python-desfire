@@ -73,7 +73,7 @@ pages:
     - apk add gcc libc-dev libffi-dev
     - pip install poetry
     - poetry config virtualenvs.create false
-    - poetry install --only dev --no-root
+    - poetry install --only dev
     - poetry run mkdocs build --strict --verbose
   artifacts:
     paths:
