@@ -1,0 +1,62 @@
+# Change pip's cache directory to be inside the project directory since we can
+# only cache local items.
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+# Pip's cache doesn't store the python packages
+# https://pip.pypa.io/en/stable/reference/pip_install/#caching
+cache:
+  paths:
+    - .cache/pip
+
+stages:
+  - linting
+  - build
+
+.lint-base:
+  stage: linting
+  image: python:3.13-alpine
+  only:
+    - merge_requests
+    - master
+    - tags
+
+ruff-check:
+  extends: .lint-base
+  allow_failure: true
+  script:
+    - pip install ruff
+    - ruff check src --exit-zero --output-format gitlab > gl-code-quality-report.json
+    - ruff check src --exit-non-zero-on-fix
+  artifacts:
+    reports:
+      codequality: gl-code-quality-report.json
+    when: always
+
+ruff-format:
+  extends: .lint-base
+  script:
+      - pip install ruff
+      - ruff format src
+
+type-check:
+  extends: .lint-base
+  allow_failure: true
+  script:
+    - apk add gcc libc-dev libffi-dev
+    - pip install poetry
+    - poetry config virtualenvs.create false
+    - poetry install --with dev --no-root
+    - mkdir -p .mypy_cache
+    - poetry run python -m mypy --install-types --non-interactive --cache-dir=.mypy_cache/ src
+
+build:
+  stage: build
+  image: python:3.13-alpine
+  only:
+    - tags
+  script: 
+    - poetry build
+    - poetry config repositories.gitlab "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi"
+    - poetry config http-basic.gitlab gitlab-ci-token "$CI_JOB_TOKEN"
+    - poetry publish --repository gitlab
