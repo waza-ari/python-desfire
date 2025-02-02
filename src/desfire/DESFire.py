@@ -307,11 +307,11 @@ class DESFire:
         # Determine the authentication command based on the key type
         if key.key_type == DESFireKeyType.DF_KEY_AES:
             self.logger.debug("Authenticating with AES key")
-            cmd = DESFireCommand.DFEV1_INS_AUTHENTICATE_AES.value
+            cmd = DESFireCommand.AUTHENTICATE_AES.value
             params = [key_id]
         elif key.key_type == DESFireKeyType.DF_KEY_2K3DES or key.key_type == DESFireKeyType.DF_KEY_3K3DES:
             self.logger.debug("Authenticating with DES/3DES key")
-            cmd = DESFireCommand.DFEV1_INS_AUTHENTICATE_ISO.value
+            cmd = DESFireCommand.AUTHENTICATE_ISO.value
             params = [key_id]
         else:
             raise Exception("Invalid key type!")
@@ -361,7 +361,7 @@ class DESFire:
 
         # Send the encrypted RndAB to the card, it should reply with a positive result
         params = RndAB_enc
-        cmd = DESFireCommand.DF_INS_ADDITIONAL_FRAME.value
+        cmd = DESFireCommand.ADDITIONAL_FRAME.value
         RndA_enc = self._transceive(
             self._command(cmd, params), DESFireCommunicationMode.PLAIN, DESFireCommunicationMode.PLAIN
         )
@@ -421,7 +421,7 @@ class DESFire:
         if not self.is_authenticated:
             raise Exception("Not authenticated!")
 
-        cmd = DESFireCommand.DFEV1_INS_GET_CARD_UID.value
+        cmd = DESFireCommand.GET_CARD_UID.value
         return self._transceive(self._command(cmd), DESFireCommunicationMode.PLAIN, DESFireCommunicationMode.ENCRYPTED)
 
     def get_card_version(self) -> CardVersion:
@@ -434,7 +434,7 @@ class DESFire:
         """
         self.logger.debug("Getting card version info")
         raw_data = self._transceive(
-            self._command(DESFireCommand.DF_INS_GET_VERSION.value),
+            self._command(DESFireCommand.GET_VERSION.value),
             DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
@@ -447,7 +447,7 @@ class DESFire:
         Authentication using the App 0 master key is needed to call this function
         """
         self.logger.debug("Formatting card")
-        cmd = DESFireCommand.DF_INS_FORMAT_PICC.value
+        cmd = DESFireCommand.FORMAT_PICC.value
         self._transceive(self._command(cmd), DESFireCommunicationMode.PLAIN, DESFireCommunicationMode.PLAIN)
 
     #
@@ -472,7 +472,7 @@ class DESFire:
         CMAC is used for communication if authenticated, otherwise plain communication is used.
         """
         resp = self._transceive(
-            self._command(DESFireCommand.DF_INS_GET_KEY_SETTINGS.value),
+            self._command(DESFireCommand.GET_KEY_SETTINGS.value),
             DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
@@ -497,7 +497,7 @@ class DESFire:
         self.logger.debug(f"Getting key version for keyid {key_number:x}")
 
         params = get_list(key_number, 1, "big")
-        cmd = DESFireCommand.DF_INS_GET_KEY_VERSION.value
+        cmd = DESFireCommand.GET_KEY_VERSION.value
         raw_data = self._transceive(
             self._command(cmd, params),
             DESFireCommunicationMode.PLAIN,
@@ -539,7 +539,7 @@ class DESFire:
 
         # self.logger.debug('Changing key settings to %s' %('|'.join(a.name for a in newKeySettings),))
         self._transceive(
-            self._command(DESFireCommand.DF_INS_CHANGE_KEY_SETTINGS.value, [key_settings.get_settings()]),
+            self._command(DESFireCommand.CHANGE_KEY_SETTINGS.value, [key_settings.get_settings()]),
             DESFireCommunicationMode.ENCRYPTED,
             DESFireCommunicationMode.CMAC,
         )
@@ -573,7 +573,7 @@ class DESFire:
 
         # Data to transmit depends on whether we're changing the PICC master key or an application key
         # and whether we're changing the key we're authenticated with or a different one
-        data = self._command(DESFireCommand.DF_INS_CHANGE_KEY.value, [key_number])
+        data = self._command(DESFireCommand.CHANGE_KEY.value, [key_number])
 
         # The following can only apply to application keys, as the PICC has only one key (0x00).
         if not is_same_key:
@@ -626,7 +626,7 @@ class DESFire:
             raise DESFireException("Not authenticated!")
 
         # 0x5C is related to the card configuration, 0x01 is the dedault key
-        data = self._command(DESFireCommand.DFEV1_INS_SET_CONFIGURATION.value, [0x01])
+        data = self._command(DESFireCommand.SET_CONFIGURATION.value, [0x01])
 
         # Append key data and pad it to 24 bytes key length
         data += list(new_key.get_key())
@@ -657,7 +657,7 @@ class DESFire:
         self.logger.debug("Fetching application IDs")
 
         raw_data = self._transceive(
-            self._command(DESFireCommand.DF_INS_GET_APPLICATION_IDS.value),
+            self._command(DESFireCommand.GET_APPLICATION_IDS.value),
             DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
@@ -685,7 +685,7 @@ class DESFire:
 
         #  As application selection invalidates auth, there's no need to use CMAC
         self._transceive(
-            self._command(DESFireCommand.DF_INS_SELECT_APPLICATION.value, parameters),
+            self._command(DESFireCommand.SELECT_APPLICATION.value, parameters),
             DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.PLAIN,
         )
@@ -718,7 +718,7 @@ class DESFire:
         # Structure of the APDU:
         # 0xCA + AppID (3 bytes) + key settings (1 byte) + app settings (4 MSB = key type, 4 LSB = key count)
         params = appid + [keysettings.get_settings()] + [keycount | keysettings.key_type.value]
-        cmd = DESFireCommand.DF_INS_CREATE_APPLICATION.value
+        cmd = DESFireCommand.CREATE_APPLICATION.value
         self._transceive(
             self._command(cmd, params),
             DESFireCommunicationMode.PLAIN,
@@ -742,7 +742,7 @@ class DESFire:
         appid.reverse()
 
         self._transceive(
-            self._command(DESFireCommand.DF_INS_DELETE_APPLICATION.value, appid),
+            self._command(DESFireCommand.DELETE_APPLICATION.value, appid),
             DESFireCommunicationMode.CMAC,
             DESFireCommunicationMode.CMAC,
         )
@@ -765,7 +765,7 @@ class DESFire:
         file_ids = []
 
         raw_data = self._transceive(
-            self._command(DESFireCommand.DF_INS_GET_FILE_IDS.value),
+            self._command(DESFireCommand.GET_FILE_IDS.value),
             tx_mode=DESFireCommunicationMode.PLAIN,
             rx_mode=DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
@@ -795,7 +795,7 @@ class DESFire:
 
         # Get the file settings
         raw_data = raw_data = self._transceive(
-            self._command(DESFireCommand.DF_INS_GET_FILE_SETTINGS.value, file_id_bytes),
+            self._command(DESFireCommand.GET_FILE_SETTINGS.value, file_id_bytes),
             DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
@@ -825,7 +825,7 @@ class DESFire:
             count = min(length, 48)
             params = file_id_bytes + get_list(ioffset, 3, "little") + get_list(count, 3, "little")
             ret += self._transceive(
-                self._command(DESFireCommand.DF_INS_READ_DATA.value, params),
+                self._command(DESFireCommand.READ_DATA.value, params),
                 DESFireCommunicationMode.PLAIN,
                 file_settings.encryption,
             )
@@ -862,7 +862,7 @@ class DESFire:
         data += get_list(file_settings.file_size, 3, "little")
 
         return self._transceive(
-            self._command(DESFireCommand.DF_INS_CREATE_STD_DATA_FILE.value, data),
+            self._command(DESFireCommand.CREATE_STD_DATA_FILE.value, data),
             DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
@@ -885,7 +885,7 @@ class DESFire:
 
         params = file_id_bytes + offset_bytes + length_bytes + data
         self._transceive(
-            self._command(DESFireCommand.DF_INS_WRITE_DATA.value, params),
+            self._command(DESFireCommand.WRITE_DATA.value, params),
             communication_mode,
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
             # Command (1 byte) + header file number (1 byte), data length (3 bytes) and offset (3 bytes)
@@ -901,7 +901,7 @@ class DESFire:
             raise DESFireException("No application selected, call select_application first")
 
         return self._transceive(
-            self._command(DESFireCommand.DF_INS_DELETE_FILE.value, get_list(file_id, 1, "little")),
+            self._command(DESFireCommand.DELETE_FILE.value, get_list(file_id, 1, "little")),
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.PLAIN,
         )

@@ -10,8 +10,8 @@ class DESFireKeyType(Enum):
     DES authentication or 3DES authentication with 2 keys.
 
     Authentication Commands:
-        - DES: DF_INS_AUTHENTICATE_LEGACY
-        - 3DES: DFEV1_INS_AUTHENTICATE_ISO
+        - DES: AUTHENTICATE_LEGACY
+        - 3DES: AUTHENTICATE_ISO
     Keysize:
         - DES: 8 bytes
         - 3DES: 16 bytes
@@ -25,7 +25,7 @@ class DESFireKeyType(Enum):
     """
     3DES authentication with 3 keys.
 
-    Authentication Commands: DFEV1_INS_AUTHENTICATE_ISO
+    Authentication Commands: AUTHENTICATE_ISO
     Keysize: 24 bytes
     Block size: 8 bytes
     Ciphermod: DES3.new(key, DES3.MODE_CBC, iv)
@@ -35,7 +35,7 @@ class DESFireKeyType(Enum):
     """
     AES authentication.
 
-    Authentication Commands: DFEV1_INS_AUTHENTICATE_AES
+    Authentication Commands: AUTHENTICATE_AES
     Keysize: 16 bytes
     Block size: 16 bytes
     Ciphermod: AES.new(key, AES.MODE_CBC, iv)

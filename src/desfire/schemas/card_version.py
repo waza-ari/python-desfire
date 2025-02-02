@@ -2,30 +2,34 @@ from smartcard.util import toHexString
 
 
 class CardVersion:
-    def __init__(self, data):
-        self.raw_bytes = data
-        self.hardware_vendor_id = data[0]
-        self.hardware_type = data[1]
-        self.hardware_sub_type = data[2]
-        self.hardware_major_version = data[3]
-        self.hardware_minor_version = data[4]
-        self.hardware_storage_size = data[5]
-        self.hardware_protocol = data[6]
+    """
+    This class represents the output of the GetVersion command and parses the data into a more readable format.
+    """
 
-        self.software_vendor_id = data[7]
-        self.software_type = data[8]
-        self.software_sub_type = data[9]
-        self.software_major_version = data[10]
-        self.software_minor_version = data[11]
-        self.software_storage_size = data[12]
-        self.software_protocol = data[13]
+    def __init__(self, data: list[int]):
+        self.raw_bytes: list[int] = data
+        self.hardware_vendor_id: int = data[0]
+        self.hardware_type: int = data[1]
+        self.hardware_sub_type: int = data[2]
+        self.hardware_major_version: int = data[3]
+        self.hardware_minor_version: int = data[4]
+        self.hardware_storage_size: int = data[5]
+        self.hardware_protocol: int = data[6]
 
-        self.uid = data[14:21]  # The serial card number
-        self.batch_no = data[21:25]  # The batch number
-        self.production_date_cw = data[26]  # The production week (BCD)
-        self.production_date_year = data[27]  # The production year (BCD)
+        self.software_vendor_id: int = data[7]
+        self.software_type: int = data[8]
+        self.software_sub_type: int = data[9]
+        self.software_major_version: int = data[10]
+        self.software_minor_version: int = data[11]
+        self.software_storage_size: int = data[12]
+        self.software_protocol: int = data[13]
 
-    def __repr__(self):
+        self.uid: list[int] = data[14:21]
+        self.batch_no: list[int] = data[21:25]
+        self.production_date_cw: int = data[26]
+        self.production_date_year: int = data[27]
+
+    def __repr__(self) -> str:
         temp = "--- Desfire Card Details ---\r\n"
         temp += f"Hardware Version: {self.hardware_minor_version}.{self.hardware_minor_version}\r\n"
         temp += f"Software Version: {self.software_major_version}.{self.software_minor_version}\r\n"
