@@ -1,5 +1,3 @@
-from smartcard.util import toHexString
-
 from desfire import diversify_key
 from desfire.util import get_list
 
@@ -21,7 +19,6 @@ def test_diversify_nxp_application_note():
     key = get_list(MK)
 
     div_key = diversify_key(key, diversify_data, pad_to_32=True)
-    print("Diversified key: ", toHexString(div_key))
 
     assert get_list(EXPECTED_RESULT) == div_key
 
@@ -43,6 +40,5 @@ def test_diversify_no_32_padding():
     key = get_list(MK)
 
     div_key = diversify_key(key, diversify_data, pad_to_32=False)
-    print("Diversified key: ", toHexString(div_key))
 
     assert get_list(EXPECTED_RESULT) == div_key
