@@ -45,9 +45,11 @@ nav:
   - index.md
   - Supported Commands: supported-commands.md
   - Using this Library: usage.md
+  - Key Diversification: key-diversification.md
   - "API Reference":
     - "Card Commands": api/desfire.md
     - "Key Handling": api/key.md
+    - "Key Diversification": api/diversification.md
     - "Utility Methods": api/utility.md
     - "ENUMs / Schemas":
       - "Communication Mode": api/enums/communication_mode.md

@@ -1,5 +1,4 @@
-from desfire import diversify_key
-from desfire.util import get_list
+from desfire import diversify_key, get_list
 
 
 def test_diversify_nxp_application_note():
