@@ -56,6 +56,8 @@ build:
   only:
     - tags
   script: 
+    - apk add gcc libc-dev libffi-dev
+    - pip install poetry
     - poetry build
     - poetry config repositories.gitlab "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi"
     - poetry config http-basic.gitlab gitlab-ci-token "$CI_JOB_TOKEN"
