@@ -1,6 +1,6 @@
 [project]
 name = "desfire"
-version = "v0.0.3"
+version = "v0.0.4"
 description = "DESFire library for python"
 authors = [
     {name = "Daniel Herrmann",email = "daniel.herrmann@makerspace-darmstadt.de"}

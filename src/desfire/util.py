@@ -75,8 +75,9 @@ def CRC32(data: list[int]) -> list[int]:
     """
     logger.debug(f"Calculating CRC32 checksum for data: {toHexString(data)}")
     checksum = int("0b" + "1" * 32, 2) - zlib.crc32(bytes(data))
-    logger.debug(f"Checksum: {toHexString(long_to_bytes(checksum, 4))}")
-    return get_list(checksum, byte_size=4, byteorder="little")
+    return_checksum = get_list(checksum, byte_size=4, byteorder="little")
+    logger.debug(f"Checksum: {toHexString(return_checksum)}")
+    return return_checksum
 
 
 def shift_bytes(bs: bytes, xor_lsb: int = 0) -> bytes:
