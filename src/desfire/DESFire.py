@@ -470,7 +470,7 @@ class DESFire:
         Returns:
             list[int]: 7 byte UID of the card
         """
-        logger.info(f"Executing command: get_real_uid (0x{DESFireCommand.GET_CARD_UID:02x})")
+        logger.info(f"Executing command: get_real_uid (0x{DESFireCommand.GET_CARD_UID.value:02x})")
 
         if not self.is_authenticated:
             logger.warning("Tried to get real UID without authentication")
@@ -496,7 +496,7 @@ class DESFire:
         Raises:
             DESFireException: if an invalid configuration is provided
         """
-        logger.info(f"Executing command: get_card_version (0x{DESFireCommand.GET_VERSION:02x})")
+        logger.info(f"Executing command: get_card_version (0x{DESFireCommand.GET_VERSION.value:02x})")
 
         raw_data = self._transceive(
             self._command(DESFireCommand.GET_VERSION.value),
@@ -523,7 +523,7 @@ class DESFire:
             logger.warning("Tried to format card without authentication")
             raise DESFireException("Not authenticated!")
 
-        logger.info(f"Executing command: format_card (0x{DESFireCommand.FORMAT_PICC:02x})")
+        logger.info(f"Executing command: format_card (0x{DESFireCommand.FORMAT_PICC.value:02x})")
         cmd = DESFireCommand.FORMAT_PICC.value
         self._transceive(self._command(cmd), DESFireCommunicationMode.PLAIN, DESFireCommunicationMode.PLAIN)
 
@@ -554,7 +554,7 @@ class DESFire:
                 used to authenticate using this key or another key of the same application.
         """
 
-        logger.info(f"Executing command: get_key_setting (0x{DESFireCommand.GET_KEY_SETTINGS:02x})")
+        logger.info(f"Executing command: get_key_setting (0x{DESFireCommand.GET_KEY_SETTINGS.value:02x})")
 
         resp = self._transceive(
             self._command(DESFireCommand.GET_KEY_SETTINGS.value),
@@ -586,7 +586,7 @@ class DESFire:
         """
 
         logger.info(
-            f"Executing command: get_key_version (0x{DESFireCommand.GET_KEY_VERSION:02x}) for key {key_number:x}"
+            f"Executing command: get_key_version (0x{DESFireCommand.GET_KEY_VERSION.value:02x}) for key {key_number:x}"
         )
 
         params = get_list(key_number, 1, "big")
@@ -649,7 +649,7 @@ class DESFire:
             logger.warning("Tried to change key settings without authentication")
             raise DESFireException("Not authenticated.")
 
-        logger.info(f"Executing command: change_key_settings (0x{DESFireCommand.CHANGE_KEY_SETTINGS:02x})")
+        logger.info(f"Executing command: change_key_settings (0x{DESFireCommand.CHANGE_KEY_SETTINGS.value:02x})")
 
         key_settings = KeySettings(settings=new_settings)
 
@@ -683,7 +683,7 @@ class DESFire:
             logger.warning("Tried to change key without authentication")
             raise DESFireException("Not authenticated!")
 
-        logger.info(f"Executing command: change_key (0x{DESFireCommand.CHANGE_KEY:02x}) for key {key_id:x}")
+        logger.info(f"Executing command: change_key (0x{DESFireCommand.CHANGE_KEY.value:02x}) for key {key_id:x}")
 
         # If we're changing the key we're authenticated with, the message format
         # is different than if we're changing a different key.
@@ -767,7 +767,7 @@ class DESFire:
             logger.warning("Tried to change default key without authentication")
             raise DESFireException("Not authenticated!")
 
-        logger.info(f"Executing command: change_default_key (0x{DESFireCommand.SET_CONFIGURATION:02x}01)")
+        logger.info(f"Executing command: change_default_key (0x{DESFireCommand.SET_CONFIGURATION.value:02x}01)")
 
         # 0x5C is related to the card configuration, 0x01 is the dedault key
         data = self._command(DESFireCommand.SET_CONFIGURATION.value, [0x01])
@@ -801,7 +801,7 @@ class DESFire:
         Returns:
             list[list[int]]: List of application IDs, in a 4 byte hex form
         """
-        logger.info(f"Executing command: get_application_ids (0x{DESFireCommand.GET_APPLICATION_IDS:02x})")
+        logger.info(f"Executing command: get_application_ids (0x{DESFireCommand.GET_APPLICATION_IDS.value:02x})")
 
         raw_data = self._transceive(
             self._command(DESFireCommand.GET_APPLICATION_IDS.value),
@@ -948,7 +948,7 @@ class DESFire:
             logger.error("Tried to get file IDs without selecting an application")
             raise DESFireException("No application selected, call select_application first")
 
-        logger.info(f"Executing command: get_file_ids (0x{DESFireCommand.GET_FILE_IDS:02x})")
+        logger.info(f"Executing command: get_file_ids (0x{DESFireCommand.GET_FILE_IDS.value:02x})")
         file_ids = []
 
         raw_data = self._transceive(
@@ -990,7 +990,7 @@ class DESFire:
 
         file_id_bytes = get_list(file_id, 1, "big")
         logger.info(
-            f"Executing command: get_file_settings (0x{DESFireCommand.GET_FILE_SETTINGS:02x})"
+            f"Executing command: get_file_settings (0x{DESFireCommand.GET_FILE_SETTINGS.value:02x})"
             f" for file {toHexString(file_id_bytes)}"
         )
 
@@ -1034,7 +1034,7 @@ class DESFire:
             raise DESFireException("No application selected, call select_application first")
 
         assert file_settings.encryption is not None
-        logger.info(f"Executing command: read_file_data (0x{DESFireCommand.READ_DATA:02x}) for file {file_id:x}")
+        logger.info(f"Executing command: read_file_data (0x{DESFireCommand.READ_DATA.value:02x}) for file {file_id:x}")
 
         file_id_bytes = get_list(file_id, 1)
         length = get_int(file_settings.file_size, "big")
@@ -1082,7 +1082,8 @@ class DESFire:
             raise DESFireException("File size must be between 0 and 255 (single byte)")
 
         logger.info(
-            f"Executing command: create_standard_file (0x{DESFireCommand.CREATE_STD_DATA_FILE:02x}) on file {file_id:x}"
+            "Executing command: create_standard_file"
+            " (0x{DESFireCommand.CREATE_STD_DATA_FILE.value:02x}) on file {file_id:x}"
         )
 
         assert file_settings.encryption is not None
@@ -1126,7 +1127,9 @@ class DESFire:
             logger.error("Tried to write file data without selecting an application")
             raise DESFireException("No application selected, call select_application first")
 
-        logger.info(f"Executing command: write_file_data (0x{DESFireCommand.WRITE_DATA:02x}) for file {file_id:x}")
+        logger.info(
+            f"Executing command: write_file_data (0x{DESFireCommand.WRITE_DATA.value:02x}) for file {file_id:x}"
+        )
 
         max_length = self.max_frame_size - 1 - 7  # 60 - CMD - CMD Header
         length = len(data)
@@ -1165,7 +1168,7 @@ class DESFire:
             logger.error("Tried to delete file without selecting an application")
             raise DESFireException("No application selected, call select_application first")
 
-        logger.info(f"Executing command: delete_file (0x{DESFireCommand.DELETE_FILE:02x}) for file {file_id:x}")
+        logger.info(f"Executing command: delete_file (0x{DESFireCommand.DELETE_FILE.value:02x}) for file {file_id:x}")
 
         self._transceive(
             self._command(DESFireCommand.DELETE_FILE.value, get_list(file_id, 1, "little")),
