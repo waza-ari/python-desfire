@@ -897,7 +897,7 @@ class DESFire:
         )
         logger.debug("Application created successfully")
 
-    def deleteApplication(self, appid: list[int] | str | bytearray | int | bytes):
+    def delete_application(self, appid: list[int] | str | bytearray | int | bytes):
         """
         Deletes the application specified by appid
 
