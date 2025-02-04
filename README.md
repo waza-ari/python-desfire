@@ -10,6 +10,8 @@ Python DESFire
 
 # Introduction
 
+[Full documentation is available at read the docs.](https://python-desfire.readthedocs.io/en/latest/)
+
 The MIFARE DESFire product provides high security RFID key tokens than can be used for contactless identity, access control or payment applications.
 
 This package provides a simple interface of interacting with DESFire chips using standard PC/SC smcartcard readers, using pure Python.
