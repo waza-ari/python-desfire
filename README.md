@@ -1,3 +1,10 @@
+[![Documentation Status](https://readthedocs.org/projects/python-desfire/badge/?version=latest)](https://python-desfire.readthedocs.io/en/latest/?badge=latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT)
+![GitHub issues](https://img.shields.io/github/issues/waza-ari/python-desfire)
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/waza-ari/python-desfire)
+![GitHub top language](https://img.shields.io/github/languages/top/waza-ari/python-desfire)
+[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/waza-ari/python-desfire/main.svg)](https://results.pre-commit.ci/latest/github/waza-ari/python-desfire/main)
+
 Python DESFire
 =========
 
