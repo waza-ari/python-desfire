@@ -72,7 +72,7 @@ build:
   image: python:3.13-alpine
   only:
     - tags
-  script: 
+  script:
     - apk add gcc libc-dev libffi-dev
     - pip install poetry
     - poetry build
@@ -85,7 +85,7 @@ pages:
   image: python:3.13-alpine
   only:
     - tags
-  script: 
+  script:
     - apk add gcc libc-dev libffi-dev
     - pip install poetry
     - poetry config virtualenvs.create false
