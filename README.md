@@ -5,10 +5,7 @@
 ![GitHub top language](https://img.shields.io/github/languages/top/waza-ari/python-desfire)
 [![pre-commit.ci status](https://results.pre-commit.ci/badge/github/waza-ari/python-desfire/main.svg)](https://results.pre-commit.ci/latest/github/waza-ari/python-desfire/main)
 
-Python DESFire
-=========
-
-# Introduction
+# Python DESFire
 
 [Full documentation is available at read the docs.](https://python-desfire.readthedocs.io/en/latest/)
 
