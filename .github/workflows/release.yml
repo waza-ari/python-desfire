@@ -4,23 +4,64 @@ on:
     tags:
       - "v*.*.*"
 jobs:
-  build-test:
+  lint:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Build and publish to pypi
-        uses: JRubics/poetry-publish@v2.1
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
         with:
-          pypi_token: ${{ secrets.TEST_PYPI_TOKEN }}
-          repository_name: "python-desfire"
-          repository_url: "https://test.pypi.org/legacy/"
+          python-version: "3.13"
+      - name: Install Poetry
+        run: pip install poetry
+      - name: Update PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Update Poetry configuration
+        run: poetry config virtualenvs.create false
+      - name: Install dependencies
+        run: poetry install --only dev --no-interaction
+      - name: Ruff Linter
+        run: poetry run ruff check src --exit-non-zero-on-fix
+      - name: Ruff Format
+        run: ruff format src --check
+  build-test:
+    runs-on: ubuntu-24.04
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install Poetry
+        run: pip install poetry
+      - name: Update PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Build the project
+        run: poetry build
+      - name: Publish to Test PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.TEST_PYPI_TOKEN }}
+          repository-url: https://test.pypi.org/legacy/
   release:
     runs-on: ubuntu-24.04
+    needs: lint
     environment: production
     steps:
       - uses: actions/checkout@v4
-      - name: Build and publish to pypi
-        uses: JRubics/poetry-publish@v2.1
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
         with:
-          pypi_token: ${{ secrets.PYPI_TOKEN }}
-          repository_name: "python-desfire"
+          python-version: "3.13"
+      - name: Install Poetry
+        run: pip install poetry
+      - name: Update PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Build the project
+        run: poetry build
+      - name: Publish to Test PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.TEST_PYPI_TOKEN }}
+          repository-url: https://test.pypi.org/legacy/
