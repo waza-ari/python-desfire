@@ -24,7 +24,7 @@ jobs:
         run: poetry run ruff check src --exit-non-zero-on-fix
       - name: Ruff Format
         run: ruff format src --check
-  build-test:
+  release-test:
     runs-on: ubuntu-24.04
     needs: lint
     steps:
@@ -64,4 +64,3 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.TEST_PYPI_TOKEN }}
-          repository-url: https://test.pypi.org/legacy/
