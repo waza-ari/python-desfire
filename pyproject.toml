@@ -1,5 +1,5 @@
 [project]
-name = "desfire"
+name = "python-desfire"
 version = "v0.0.4"
 description = "DESFire library for python"
 authors = [
