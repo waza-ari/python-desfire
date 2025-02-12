@@ -3,10 +3,10 @@ import logging
 from Crypto.Random import get_random_bytes
 from smartcard.util import toHexString
 
+from .devices.base import Device
 from .enums import DESFireCommand, DESFireCommunicationMode, DESFireKeySettings, DESFireKeyType, DESFireStatus
 from .exceptions import DESFireAuthException, DESFireCommunicationError, DESFireException
 from .key import DESFireKey
-from .pcsc import Device
 from .schemas import CardVersion, FileSettings, KeySettings
 from .util import CRC32, get_int, get_list, xor_lists
 
@@ -85,7 +85,7 @@ class DESFire:
                     try:
                         error_description = DESFireStatus(status).name
                     except ValueError:
-                        error_description = "Unknown error"
+                        error_description = f"Unknown error, status {status}"
                     logger.error("Received error from card: %s", error_description)
                     raise DESFireCommunicationError(error_description, status)
                 else:

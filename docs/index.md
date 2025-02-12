@@ -2,12 +2,16 @@
 
 The MIFARE DESFire product provides high security RFID key tokens than can be used for contactless identity, access control or payment applications.
 
-This package provides a simple interface of interacting with DESFire chips using standard PC/SC smcartcard readers, using pure Python.
+This package provides a simple interface of interacting with DESFire chips using pure Python.
 It currently supports managing keys, applications and file operations, which should cover the majority of use cases.
 AES-128 is fully supported both, DES/3DES currently only receives limited testing up to the extend that is needed to change the default key and create applications.
 
+Both PC/SC readers as well as the popular PN532 reader (only UART, no SPI or I2C as of today) is supported.
+Please make sure to install the correct extra dependencies.
+
 **Core features**:
 
+- Compatible with all PC/SC readers supported by `pyscard` or PN532 reader using UART (using `pyserial` as only additional dependency)
 - Support for **AES and ISO authentication (DES, 2K3DES and 3K3DES)**. No support for legacy authentication.
 - Full crypto support including **CMAC and CRC validation** on all commands that require it
 - **Key management** change and create keys on PICC and application leven
@@ -15,6 +19,7 @@ AES-128 is fully supported both, DES/3DES currently only receives limited testin
 - **File management** support for standard data files is implemented, other file types are currently not available
 
 Currently, the library has been used and tested with EV1 cards and CSL USB Reader, but other PC/SC compatible readers should work the same.
+It is also tested using PN532 readers, although I recommend using the Adafruit reader for better compatibility.
 
 !!! warning "NDA and Accuracy"
     Note that NXP does not release the DESFire documentation to the public, NDA signature is required to obtain this information.
@@ -27,13 +32,18 @@ Currently, the library has been used and tested with EV1 cards and CSL USB Reade
 
 ## Installation
 
-The package itself can be installed using poetry.
+The package itself can be installed using poetry. Depending on the card reader you want to use, you need to select
+which extras to install.
 
 ```bash
-poetry add TO_BE_FILLED_IN
+# For PC/SC USB readers:
+poetry add "python-desfire[pcsc]"
+
+# For PN532 Reader
+poetry add "python-desfire[pn532]"
 ```
 
-To communicate with the PC/SC smartcard reader, this package relies on `pyscard` which has some requirements.
+When communicating with the PC/SC smartcard reader, this package relies on `pyscard` which has some requirements.
 Refer to the [installation guide](https://github.com/LudovicRousseau/pyscard/blob/master/INSTALL.md) for details.
 Just for reference, to install on Debian, the requirements would be:
 
@@ -42,6 +52,8 @@ sudo apt install swig libpcsclite-dev python3-dev pcscd pcsc-tools
 ```
 
 ## Basic Usage
+
+### PC/SC
 
 There are two basic ways (coming from the `pyscard` dependency) on how to use the package, being either in direct
 mode or in observer mode. The following example connects to a card, authenticates using the default key and reads
@@ -87,6 +99,43 @@ print(toHexString(uid))
 
 This basic example shows two core concepts already, key management using the `KeySettings` schema and data
 representation using integer lists. More details on that can be found in the ... section.
+
+### PN532
+
+The PN532 reader must be connected to UART, either using a USB / UART driver or - if you're using a Raspberry PI - it is also possible using
+one of the built-in UARTs.
+
+```python
+import logging
+import sys
+
+from desfire import DESFire, PN532UARTDevice
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# Create physical device which can be used to detect a card
+device = PN532UARTDevice("/dev/ttyAMA2", baudrate=115200, timeout=0.1)
+
+# Wait for a card
+uid = None
+i = 0
+
+while not uid and i < 10:
+    logger.info(f"Connecting to card (attempt {i + 1})...")
+    uid = device.wait_for_card(timeout=1)
+    i += 1
+
+if not uid:
+    logger.error("No card detected!")
+    sys.exit(1)
+
+logger.info("Card detected.")
+
+# Create DESFire object, which allows further communication with the card
+desfire = DESFire(device)
+print(desfire.get_card_version())
+```
 
 ## Supported Commands
 

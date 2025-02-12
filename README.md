@@ -11,13 +11,16 @@
 
 The MIFARE DESFire product provides high security RFID key tokens than can be used for contactless identity, access control or payment applications.
 
-This package provides a simple interface of interacting with DESFire chips using standard PC/SC smcartcard readers, using pure Python.
+This package provides a simple interface of interacting with DESFire chips using pure Python.
 It currently supports managing keys, applications and file operations, which should cover the majority of use cases.
 AES-128 is fully supported both, DES/3DES currently only receives limited testing up to the extend that is needed to change the default key and create applications.
 
+Both PC/SC readers as well as the popular PN532 reader (only UART, no SPI or I2C as of today) is supported.
+Please make sure to install the correct extra dependencies.
+
 **Core features**:
 
--  Compatible with all readers supported by `pyscard`
+- Compatible with all PC/SC readers supported by `pyscard` or PN532 reader using UART (using `pyserial` as only additional dependency)
 - Support for **AES and ISO authentication (DES, 2K3DES and 3K3DES)**. No support for legacy authentication.
 - Full crypto support including **CMAC and CRC validation** on all commands that require it
 - **Key management** change and create keys on PICC and application leven
@@ -25,15 +28,16 @@ AES-128 is fully supported both, DES/3DES currently only receives limited testin
 - **File management** support for standard data files is implemented, other file types are currently not available
 
 Currently, the library has been used and tested with EV1 cards and CSL USB Reader, but other PC/SC compatible readers should work the same.
+It is also tested using PN532 readers, although I recommend using the Adafruit reader for better compatibility.
 
-!!! warning "NDA and Accuracy"
-    Note that NXP does not release the DESFire documentation to the public, NDA signature is required to obtain this information.
-    **The author of this package has not signed this NDA, nor does he have access to the documentation**.
-    This package has been created based on other open source work, see the Credits section below for details.
-
-    This also means that there is very limited ability to guarantee a correct implementation of all commands.
-    The package has mainly been tested using DES and AES-128 keys. If you encounter any issues, please
-    feel free to raise a ticket and/or submit an MR.
+> [!IMPORTANT]  
+> Note that NXP does not release the DESFire documentation to the public, NDA signature is required to obtain this information.
+> **The author of this package has not signed this NDA, nor does he have access to the documentation**.
+> This package has been created based on other open source work, see the Credits section below for details.
+> 
+> This also means that there is very limited ability to guarantee a correct implementation of all commands.
+> The package has mainly been tested using DES and AES-128 keys. If you encounter any issues, please
+> feel free to raise a ticket and/or submit an MR.
 
 # Documentation Sources and Credits
 
