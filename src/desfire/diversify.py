@@ -1,10 +1,9 @@
 import logging
 
-from smartcard.util import toHexString
-
 from .enums import DESFireKeyType
 from .key import DESFireKey
 from .schemas import KeySettings
+from .util import to_hex_string
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +36,7 @@ def diversify_key(key_data: list[int], diversification: list[int], pad_to_32: bo
         diversification += [0x80] + [0] * (32 - len(diversification) - 1)
         padded = True
 
-    logger.debug(f"Diversification data: {toHexString(diversification)}")
+    logger.debug(f"Diversification data: {to_hex_string(diversification)}")
 
     key = DESFireKey(KeySettings(key_type=DESFireKeyType.DF_KEY_AES), bytes(key_data))
     key.generate_cmac()

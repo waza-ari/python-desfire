@@ -17,9 +17,8 @@ import logging
 from smartcard.CardRequest import CardRequest
 from smartcard.CardType import AnyCardType
 from smartcard.Exceptions import CardRequestTimeoutException
-from smartcard.util import toHexString
 
-from desfire import DESFire, DESFireKey, PCSCDevice, diversify_key, get_list
+from desfire import DESFire, DESFireKey, PCSCDevice, diversify_key, get_list, to_hex_string
 from desfire.enums import DESFireCommunicationMode, DESFireFileType, DESFireKeySettings, DESFireKeyType
 from desfire.schemas import FilePermissions, FileSettings, KeySettings
 
@@ -69,7 +68,7 @@ desfire.authenticate(0x0, mk)
 # Get real UID
 print("Getting real UID...")
 uid = desfire.get_real_uid()
-print("  - UID: ", toHexString(uid))
+print("  - UID: ", to_hex_string(uid))
 
 # Set default key
 print("Setting default key...")

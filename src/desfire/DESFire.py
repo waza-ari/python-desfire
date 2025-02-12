@@ -1,14 +1,13 @@
 import logging
 
 from Crypto.Random import get_random_bytes
-from smartcard.util import toHexString
 
 from .devices.base import Device
 from .enums import DESFireCommand, DESFireCommunicationMode, DESFireKeySettings, DESFireKeyType, DESFireStatus
 from .exceptions import DESFireAuthException, DESFireCommunicationError, DESFireException
 from .key import DESFireKey
 from .schemas import CardVersion, FileSettings, KeySettings
-from .util import CRC32, get_int, get_list, xor_lists
+from .util import CRC32, get_int, get_list, to_hex_string, xor_lists
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +63,9 @@ class DESFire:
         # Loop until all data is received
         while additional_data:
             # Send the APDU command to the card
-            logger.debug("Running APDU command, sending: %s", toHexString(apdu_cmd))
+            logger.debug("Running APDU command, sending: %s", to_hex_string(apdu_cmd))
             resp = self.device.transceive(apdu_cmd)
-            logger.debug("Received APDU response: %s", toHexString(resp))
+            logger.debug("Received APDU response: %s", to_hex_string(resp))
 
             # DESfire native commands are used
             if native:
@@ -129,9 +128,9 @@ class DESFire:
             return data
         padding = blocksize - (len(data) % blocksize)
         logger.debug(f"Adding padding of {padding} bytes to the data.")
-        logger.debug(f"Original Data: {toHexString(data)}")
+        logger.debug(f"Original Data: {to_hex_string(data)}")
         padded_data = data + [0x80] + [0x00] * (padding - 1)
-        logger.debug(f"Padded Data: {toHexString(padded_data)}")
+        logger.debug(f"Padded Data: {to_hex_string(padded_data)}")
         return padded_data
 
     @classmethod
@@ -157,7 +156,7 @@ class DESFire:
         Preprocess the command before sending it to the card. This includes adding the padding and the CRC if needed.
         """
 
-        logger.debug(f"Preprocessing command {toHexString(apdu_cmd)}")
+        logger.debug(f"Preprocessing command {to_hex_string(apdu_cmd)}")
 
         # If not authenticated, we don't need to do anything
         if not self.is_authenticated:
@@ -176,18 +175,18 @@ class DESFire:
             # Calculate the CMAC and append it to the command
             logger.debug("Calculating CMAC for data")
             tx_cmac = self.session_key.calculate_cmac(apdu_cmd)
-            logger.debug("CMAC has been calculated to be: " + toHexString(tx_cmac))
+            logger.debug("CMAC has been calculated to be: " + to_hex_string(tx_cmac))
             # Only the last 8 bytes of the CMAC are used
             return apdu_cmd + tx_cmac[-8:]
         elif tx_mode == DESFireCommunicationMode.ENCRYPTED:
             assert self.session_key.cipher_block_size is not None
 
             logger.debug("Command requires data to be encrypted. Calculating CRC and encrypting message")
-            logger.debug("Original data: " + toHexString(apdu_cmd))
+            logger.debug("Original data: " + to_hex_string(apdu_cmd))
 
             # Encrypt the command + data
             resp_data = self.session_key.encrypt_msg(apdu_cmd, disable_crc=disable_crc, offset=encryption_offset)
-            logger.debug("Encrypted data: " + toHexString(resp_data))
+            logger.debug("Encrypted data: " + to_hex_string(resp_data))
 
             # Update IV to the last block of the encrypted data
             self.session_key.set_iv(resp_data[-self.session_key.cipher_block_size :])
@@ -203,7 +202,7 @@ class DESFire:
         Postprocess the response from the card.
         """
 
-        logger.debug(f"Postprocessing PICC response {toHexString(response)}")
+        logger.debug(f"Postprocessing PICC response {to_hex_string(response)}")
 
         # PLAIN response is only possible if we're not authenticated
         if rx_mode == DESFireCommunicationMode.PLAIN:
@@ -222,11 +221,11 @@ class DESFire:
             # Calculate the CMAC of the last 8 bytes of the response and append status code
             cmac_data = response[:-8] + [0x00]  # Status code of a successful command is always 0x00
 
-            logger.debug("Calculating CMAC for data: " + toHexString(cmac_data))
+            logger.debug("Calculating CMAC for data: " + to_hex_string(cmac_data))
             calculated_cmac = self.session_key.calculate_cmac(cmac_data)[:8]
 
-            logger.debug("RXCMAC      : " + toHexString(response[-8:]))
-            logger.debug("RXCMAC_CALC : " + toHexString(calculated_cmac))
+            logger.debug("RXCMAC      : " + to_hex_string(response[-8:]))
+            logger.debug("RXCMAC_CALC : " + to_hex_string(calculated_cmac))
 
             if bytes(response[-8:]) != bytes(calculated_cmac):
                 logger.warning("CMAC verification failed!")
@@ -244,11 +243,11 @@ class DESFire:
             assert self.session_key.cipher_block_size is not None
 
             # Decrypt the response
-            logger.debug("Encrypted response: " + toHexString(response))
+            logger.debug("Encrypted response: " + to_hex_string(response))
             padded_response = self._add_padding(response)
-            logger.debug("Padded response: " + toHexString(padded_response))
+            logger.debug("Padded response: " + to_hex_string(padded_response))
             decrypted_response = self.session_key.decrypt(padded_response)
-            logger.debug("Decrypted response: " + toHexString(decrypted_response))
+            logger.debug("Decrypted response: " + to_hex_string(decrypted_response))
 
             # Update IV to the last block of the encrypted data
             self.session_key.set_iv(response[-self.session_key.cipher_block_size :])
@@ -257,20 +256,20 @@ class DESFire:
             while decrypted_response[-1] == 0x00:
                 decrypted_response = decrypted_response[:-1]
 
-            logger.debug("Decrypted response (trimmed): " + toHexString(decrypted_response))
+            logger.debug("Decrypted response (trimmed): " + to_hex_string(decrypted_response))
 
             # Check if the CRC is correct - Status byte is appended to the data before CRC calculation
             logger.debug("Verifying CRC checksum")
             crc_bytes = 4  # 2 (CRC16) is only needed for legacy authentication, which we do not support (only ISO+AES)
             received_crc = decrypted_response[-crc_bytes:]
-            logger.debug("Received CRC  : " + toHexString(received_crc))
+            logger.debug("Received CRC  : " + to_hex_string(received_crc))
             calculated_crc = CRC32(decrypted_response[:-crc_bytes] + [0x00])
-            logger.debug("Calculated CRC: " + toHexString(calculated_crc))
+            logger.debug("Calculated CRC: " + to_hex_string(calculated_crc))
 
             if bytes(received_crc) != bytes(calculated_crc):
                 logger.warning(
-                    f"CRC verification failed! (received: {toHexString(received_crc)},"
-                    f" calculated: {toHexString(calculated_crc)})"
+                    f"CRC verification failed! (received: {to_hex_string(received_crc)},"
+                    f" calculated: {to_hex_string(calculated_crc)})"
                 )
                 raise Exception("CRC verification failed!")
 
@@ -364,7 +363,7 @@ class DESFire:
             DESFireCommunicationMode.PLAIN,
             af_passthrough=True,
         )
-        logger.debug("Encrypion: Random B (enc):" + toHexString(RndB_enc))
+        logger.debug("Encrypion: Random B (enc):" + to_hex_string(RndB_enc))
 
         # Check if the key type is correct
         if (key.key_type == DESFireKeyType.DF_KEY_3K3DES or key.key_type == DESFireKeyType.DF_KEY_AES) and len(
@@ -383,25 +382,25 @@ class DESFire:
 
         # Decrypt the RndB using the provided master key
         RndB = key.decrypt(RndB_enc)
-        logger.debug("Encrypion: Random B (dec): " + toHexString(RndB))
+        logger.debug("Encrypion: Random B (dec): " + to_hex_string(RndB))
 
         # Rotate RndB to the left by one byte
         RndB_rot = RndB[1:] + [RndB[0]]
-        logger.debug("Encrypion: Random B (dec, rot): " + toHexString(RndB_rot))
+        logger.debug("Encrypion: Random B (dec, rot): " + to_hex_string(RndB_rot))
 
         # Challenge can be either provided externally, or generated randomly
         if challenge is not None:
             RndA = get_list(challenge)
         else:
             RndA = get_list(get_random_bytes(len(RndB)))
-        logger.debug("Encrypion: Random A: " + toHexString(RndA))
+        logger.debug("Encrypion: Random A: " + to_hex_string(RndA))
 
         # Concatenate RndA and RndB_rot and encrypt it with the master key
         RndAB = list(RndA) + RndB_rot
-        logger.debug("Encrypion: Random AB: " + toHexString(RndAB))
+        logger.debug("Encrypion: Random AB: " + to_hex_string(RndAB))
         key.set_iv(RndB_enc)
         RndAB_enc = key.encrypt(RndAB)
-        logger.debug("Encrypion: Random AB (enc): " + toHexString(RndAB_enc))
+        logger.debug("Encrypion: Random AB (enc): " + to_hex_string(RndAB_enc))
 
         # Send the encrypted RndAB to the card, it should reply with a positive result
         params = RndAB_enc
@@ -411,12 +410,12 @@ class DESFire:
         )
 
         # Verify that the response matches our original challenge
-        logger.debug("Encrypion: Random A (enc): " + toHexString(RndA_enc))
+        logger.debug("Encrypion: Random A (enc): " + to_hex_string(RndA_enc))
         key.set_iv(RndAB_enc[-key.cipher_block_size :])
         RndA_dec = key.decrypt(RndA_enc)
-        logger.debug("Encrypion: Random A (dec): " + toHexString(RndA_dec))
+        logger.debug("Encrypion: Random A (dec): " + to_hex_string(RndA_dec))
         RndA_dec_rot = RndA_dec[-1:] + RndA_dec[0:-1]
-        logger.debug("Encrypion: Random A (dec, rot): " + toHexString(RndA_dec_rot))
+        logger.debug("Encrypion: Random A (dec, rot): " + to_hex_string(RndA_dec_rot))
 
         if bytes(RndA) != bytes(RndA_dec_rot):
             raise DESFireAuthException("Authentication FAILED!")
@@ -700,7 +699,7 @@ class DESFire:
         key_number = key_id & 0x0F
         if self.last_selected_application == [0x00]:
             key_number = key_number | current_key.key_type.value
-            logger.debug(f"Key number parameter calculated: {toHexString([key_number])}")
+            logger.debug(f"Key number parameter calculated: {to_hex_string([key_number])}")
 
         # Data to transmit depends on whether we're changing the PICC master key or an application key
         # and whether we're changing the key we're authenticated with or a different one
@@ -808,13 +807,13 @@ class DESFire:
             DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
-        logger.debug(f"Raw data: {toHexString(raw_data)}")
+        logger.debug(f"Raw data: {to_hex_string(raw_data)}")
 
         # Parse App data, each of them is 3 bytes long
         apps = []
         for i in range(0, len(raw_data), 3):
             appid = [raw_data[i + 2]] + [raw_data[i + 1]] + [raw_data[i]]
-            logger.debug(f"Found application with AppID {toHexString(appid)}")
+            logger.debug(f"Found application with AppID {to_hex_string(appid)}")
             apps.append(appid)
 
         logger.debug(f"Found {len(apps)} applications")
@@ -833,7 +832,7 @@ class DESFire:
         """
 
         parsed_appid = get_list(appid, 3, "big")
-        logger.info(f"Selecting application with ID {toHexString(parsed_appid)}")
+        logger.info(f"Selecting application with ID {to_hex_string(parsed_appid)}")
 
         # TODO: Check why this is reversed after parsing the list big endian above
         parameters = [parsed_appid[2], parsed_appid[1], parsed_appid[0]]
@@ -884,7 +883,7 @@ class DESFire:
             raise DESFireException("Key count must be between 0 and 14.")
 
         appid = get_list(appid, 3, "big")
-        logger.info(f"Creating application with ID: {toHexString(appid)}, ")
+        logger.info(f"Creating application with ID: {to_hex_string(appid)}, ")
 
         # Structure of the APDU:
         # 0xCA + AppID (3 bytes) + key settings (1 byte) + app settings (4 MSB = key type, 4 LSB = key count)
@@ -916,7 +915,7 @@ class DESFire:
             raise DESFireException("Not authenticated!")
 
         appid = get_list(appid, 3, "big")
-        logger.info("Deleting application for ID %s", toHexString(appid))
+        logger.info("Deleting application for ID %s", to_hex_string(appid))
 
         appid.reverse()
 
@@ -963,7 +962,7 @@ class DESFire:
         else:
             for byte in raw_data:
                 file_ids.append(byte)
-            logger.debug(f"File ids: {''.join([toHexString([id]) for id in file_ids])}")
+            logger.debug(f"File ids: {''.join([to_hex_string([id]) for id in file_ids])}")
 
         return file_ids
 
@@ -991,7 +990,7 @@ class DESFire:
         file_id_bytes = get_list(file_id, 1, "big")
         logger.info(
             f"Executing command: get_file_settings (0x{DESFireCommand.GET_FILE_SETTINGS.value:02x})"
-            f" for file {toHexString(file_id_bytes)}"
+            f" for file {to_hex_string(file_id_bytes)}"
         )
 
         # Get the file settings
@@ -1000,7 +999,7 @@ class DESFire:
             DESFireCommunicationMode.PLAIN,
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
-        logger.debug(f"Raw data: {toHexString(raw_data)}")
+        logger.debug(f"Raw data: {to_hex_string(raw_data)}")
 
         # Parse the raw data
         file_settings = FileSettings()
@@ -1050,11 +1049,11 @@ class DESFire:
                 DESFireCommunicationMode.PLAIN,
                 file_settings.encryption,
             )
-            logger.debug(f"Read raw data: {toHexString(ret)}")
+            logger.debug(f"Read raw data: {to_hex_string(ret)}")
             ioffset += count
             length -= count
 
-        logger.debug(f"Total data that has been read: {toHexString(ret)}")
+        logger.debug(f"Total data that has been read: {to_hex_string(ret)}")
         return ret
 
     def create_standard_file(self, file_id: int, file_settings: FileSettings):

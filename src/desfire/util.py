@@ -4,7 +4,6 @@ from typing import Literal
 
 from Crypto.Cipher import AES, DES, DES3
 from Crypto.Util.number import bytes_to_long, long_to_bytes
-from smartcard.util import toHexString
 
 from .enums import DESFireKeyType
 
@@ -48,19 +47,19 @@ def get_list(
     if isinstance(data, list):
         # Already a list. Verify that each entry is an integer between 0 and 255.
         assert all(0 <= x <= 255 for x in data)
-        logger.debug(f"Data is already a list of integers: {toHexString(data)}")
+        logger.debug(f"Data is already a list of integers: {to_hex_string(data)}")
         return data
     elif isinstance(data, str):
         data = list(bytearray.fromhex(data))
-        logger.debug(f"Data is byte array. Conversion result: {toHexString(data)}")
+        logger.debug(f"Data is byte array. Conversion result: {to_hex_string(data)}")
         return data
     elif isinstance(data, bytearray) or isinstance(data, bytes):
         data = list(data)
-        logger.debug(f"Data is byte array. Conversion result: {toHexString(data)}")
+        logger.debug(f"Data is byte array. Conversion result: {to_hex_string(data)}")
         return data
     elif isinstance(data, int):
         data = list(data.to_bytes(byte_size, byteorder=byteorder))
-        logger.debug(f"Data is integer. Conversion result: {toHexString(data)}")
+        logger.debug(f"Data is integer. Conversion result: {to_hex_string(data)}")
         return data
 
     logger.warning(f"Data type not recognized: {type(data)}, returning as is")
@@ -73,11 +72,36 @@ def CRC32(data: list[int]) -> list[int]:
 
     See https://stackoverflow.com/a/58861664/1627106
     """
-    logger.debug(f"Calculating CRC32 checksum for data: {toHexString(data)}")
+    logger.debug(f"Calculating CRC32 checksum for data: {to_hex_string(data)}")
     checksum = int("0b" + "1" * 32, 2) - zlib.crc32(bytes(data))
     return_checksum = get_list(checksum, byte_size=4, byteorder="little")
-    logger.debug(f"Checksum: {toHexString(return_checksum)}")
+    logger.debug(f"Checksum: {to_hex_string(return_checksum)}")
     return return_checksum
+
+
+def to_hex_string(data: list[int] | None = None, separator: str = " ", byte_prefix: str = "") -> str:
+    """
+    Convert a list of integers to a formatted string of hexadecimal.
+
+    Integers larger than 255 will be truncated to two-byte hexadecimal pairs.
+
+    Args:
+        data (list[int] | None, optional): Input data that should be converted.
+        separator (str, optional): Separator between each hex pair
+        byte_prefix (str, optional): Prefix to put in front of each pair of hex characters. E.g. "0x"
+
+    Returns:
+        str: String representation of the input data in hexadecimal format.
+    """
+
+    if not (data is None or isinstance(data, list)):
+        raise TypeError("not a list of bytes")
+
+    if not data:
+        return ""
+
+    pformat = byte_prefix + "%-0.2X"
+    return separator.join(pformat % (a & 0xFF) for a in data).rstrip()
 
 
 def shift_bytes(bs: bytes, xor_lsb: int = 0) -> bytes:

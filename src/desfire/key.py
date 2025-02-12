@@ -1,13 +1,11 @@
 import logging
 
-from smartcard.util import toHexString
-
 from desfire.schemas import KeySettings
 
 from .cmac import CMAC
 from .enums import DESFireKeyType
 from .exceptions import DESFireException
-from .util import CRC32, get_ciphermod, get_list, xor_lists
+from .util import CRC32, get_ciphermod, get_list, to_hex_string, xor_lists
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +57,7 @@ class DESFireKey:
         self.iv0 = [0] * key_size
 
     def set_iv(self, iv: list[int]):
-        logger.debug(f"Setting IV to {toHexString(iv)}")
+        logger.debug(f"Setting IV to {to_hex_string(iv)}")
         self.iv = iv
 
     def cipher_init(self):
@@ -147,7 +145,7 @@ class DESFireKey:
         Decrypts the given data with the key and returns the decrypted data as a list of integers.
         """
         cipher = get_ciphermod(self.key_type, self.get_key(), bytes(self.iv))
-        logger.debug(f"Decrypting data: {toHexString(dataEnc)} using key type {self.key_type.name}")
+        logger.debug(f"Decrypting data: {to_hex_string(dataEnc)} using key type {self.key_type.name}")
         block = cipher.decrypt(bytes(dataEnc))
         return list(bytearray(block))
 
@@ -169,7 +167,7 @@ class DESFireKey:
         assert self.cipher_block_size is not None
 
         # Calculate the CMAC
-        logger.debug(f"Calculating CMAC for data: {toHexString(data)}")
+        logger.debug(f"Calculating CMAC for data: {to_hex_string(data)}")
         ndata = data.copy()
         padded: bool = pre_padded
 
@@ -178,7 +176,7 @@ class DESFireKey:
             ndata += [self.cmac.PADDING_CONSTANT] + [0x00] * (
                 self.cipher_block_size - len(ndata) % self.cipher_block_size - 1
             )
-            logger.debug(f"Padding data to block size: {toHexString(ndata)}")
+            logger.debug(f"Padding data to block size: {to_hex_string(ndata)}")
             padded = True
 
         # XOR the last block with k1 or k2, depending on the padding
@@ -191,11 +189,11 @@ class DESFireKey:
 
         # XOR the last block with the key
         xor_data = ndata[0 : -self.cipher_block_size] + xor_lists(ndata[-self.cipher_block_size :], key_to_use)
-        logger.debug(f"XOR data: {toHexString(xor_data)}")
+        logger.debug(f"XOR data: {to_hex_string(xor_data)}")
 
         # Encrypt the padded data
         ret = self.encrypt(xor_data)
-        logger.debug(f"Encrypted data: {toHexString(ret)}")
+        logger.debug(f"Encrypted data: {to_hex_string(ret)}")
 
         # Update the IV with the last block of the encrypted data
         self.set_iv(ret[-self.cipher_block_size :])

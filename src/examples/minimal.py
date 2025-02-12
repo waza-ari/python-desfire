@@ -1,9 +1,8 @@
 from smartcard.CardRequest import CardRequest
 from smartcard.CardType import AnyCardType
 from smartcard.Exceptions import CardRequestTimeoutException
-from smartcard.util import toHexString
 
-from desfire import DESFire, DESFireKey, PCSCDevice
+from desfire import DESFire, DESFireKey, PCSCDevice, to_hex_string
 
 cardtype = AnyCardType()
 cardrequest = CardRequest(timeout=30, cardType=cardtype)
@@ -28,4 +27,4 @@ desfire.authenticate(0x0, mk)
 
 # Get real UID
 uid = desfire.get_real_uid()
-print(toHexString(uid))
+print(to_hex_string(uid))
