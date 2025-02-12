@@ -4,6 +4,14 @@ from ..exceptions import DESFireException
 from ..util import get_list
 from .base import Device
 
+# Try importing pyserial
+try:
+    import serial
+except ImportError:
+    _has_serial = False
+else:
+    _has_serial = True
+
 _PREAMBLE = 0x00
 _STARTCODE1 = 0x00
 _STARTCODE2 = 0xFF
@@ -32,10 +40,8 @@ class PN532UARTDevice(Device):
         Keyword Args:
             All keyword arguments are passed to the pyserial.Serial constructor.
         """
-        # Try importing pyserial
-        try:
-            import serial
-        except ImportError:
+
+        if not _has_serial:
             raise ImportError("pyserial is required for using PN532UARTDevice")
 
         self._uart = serial.Serial(port, **kwargs)

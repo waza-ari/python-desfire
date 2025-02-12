@@ -4,7 +4,10 @@ try:
     from smartcard.pcsc.PCSCCardConnection import translateprotocolheader
     from smartcard.scard import SCardGetErrorMessage, SCardTransmit
 except ImportError:
-    raise ImportError("pyscard is required for using PCSCDevice")
+    _has_pyscard = False
+else:
+    _has_pyscard = True
+
 from ..exceptions import DESFireException
 from .base import Device
 
@@ -17,6 +20,10 @@ class PCSCDevice(Device):
         :card_connection: :py:class:`smartcard.pcsc.PCSCCardConnection.PCSCCardConnection` instance.
         Call ``card_connection.connect()`` before calling any DESFire APIs.
         """
+
+        if not _has_pyscard:
+            raise ImportError("pyscard is required for using PCSCDevice")
+
         self.card_connection = card_connection
 
     def transceive(self, bytes: list[int]) -> list[int]:
