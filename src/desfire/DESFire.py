@@ -697,11 +697,9 @@ class DESFire:
         # The type of key can only be changed for the PICC master key
         # Applications must define their key type in create_application()
         key_number = key_id & 0x0F
-        logger.debug(f"last app: {self.last_selected_application}")
         if self.last_selected_application == [0x00] or self.last_selected_application == None:
             key_number = key_number | current_key.key_type.value
             # changing the PICC master key type requires special key_numbers
-            print(new_key.key_type.value)
             if new_key.key_type == DESFireKeyType.DF_KEY_AES:
                 key_number = 0x80
             elif new_key.key_type == DESFireKeyType.DF_KEY_3K3DES:
