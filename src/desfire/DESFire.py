@@ -697,8 +697,13 @@ class DESFire:
         # The type of key can only be changed for the PICC master key
         # Applications must define their key type in create_application()
         key_number = key_id & 0x0F
-        if self.last_selected_application == [0x00]:
+        if self.last_selected_application == [0x00] or self.last_selected_application == None:
             key_number = key_number | current_key.key_type.value
+            # changing the PICC master key type requires special key_numbers
+            if new_key.key_type == DESFireKeyType.DF_KEY_AES:
+                key_number = 0x80
+            elif new_key.key_type == DESFireKeyType.DF_KEY_3K3DES:
+                key_number = 0x40
             logger.debug(f"Key number parameter calculated: {to_hex_string([key_number])}")
 
         # Data to transmit depends on whether we're changing the PICC master key or an application key
@@ -812,7 +817,7 @@ class DESFire:
         # Parse App data, each of them is 3 bytes long
         apps = []
         for i in range(0, len(raw_data), 3):
-            appid = [raw_data[i + 2]] + [raw_data[i + 1]] + [raw_data[i]]
+            appid = [raw_data[i + 0]] + [raw_data[i + 1]] + [raw_data[i + 2]]
             logger.debug(f"Found application with AppID {to_hex_string(appid)}")
             apps.append(appid)
 
@@ -834,8 +839,7 @@ class DESFire:
         parsed_appid = get_list(appid, 3, "big")
         logger.info(f"Selecting application with ID {to_hex_string(parsed_appid)}")
 
-        # TODO: Check why this is reversed after parsing the list big endian above
-        parameters = [parsed_appid[2], parsed_appid[1], parsed_appid[0]]
+        parameters = [parsed_appid[0], parsed_appid[1], parsed_appid[2]]
 
         #  As application selection invalidates auth, there's no need to use CMAC
         self._transceive(
@@ -916,8 +920,6 @@ class DESFire:
 
         appid = get_list(appid, 3, "big")
         logger.info("Deleting application for ID %s", to_hex_string(appid))
-
-        appid.reverse()
 
         self._transceive(
             self._command(DESFireCommand.DELETE_APPLICATION.value, appid),
