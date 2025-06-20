@@ -924,7 +924,7 @@ class DESFire:
         self._transceive(
             self._command(DESFireCommand.DELETE_APPLICATION.value, appid),
             DESFireCommunicationMode.PLAIN,
-            DESFireCommunicationMode.PLAIN,
+            DESFireCommunicationMode.CMAC,
         )
 
     #
