@@ -11,6 +11,9 @@ except ImportError:
     _has_serial = False
 else:
     _has_serial = True
+import logging
+
+logger = logging.getLogger(__name__)
 
 _PREAMBLE = 0x00
 _STARTCODE1 = 0x00
@@ -19,6 +22,7 @@ _POSTAMBLE = 0x00
 _HOSTTOPN532 = 0xD4
 _PN532TOHOST = 0xD5
 _MIFARE_ISO14443A = 0x00
+_COMMAND_GETFIRMWAREVERSION = 0x02
 _COMMAND_SAMCONFIGURATION = 0x14
 _COMMAND_INDATAEXCHANGE = 0x40
 _COMMAND_INLISTPASSIVETARGET = 0x4A
@@ -40,13 +44,28 @@ class PN532UARTDevice(Device):
         Keyword Args:
             All keyword arguments are passed to the pyserial.Serial constructor.
         """
-
         if not _has_serial:
             raise ImportError("pyserial is required for using PN532UARTDevice")
 
         self._uart = serial.Serial(port, **kwargs)
+        self._wakeup()
+        ic, ver, rev, support = self.firmware_version()
+        logger.info("PN532 initialized, found version {ver}.{rev}.")
         self._sam_configuration()
-        self._listen_for_passive_target(timeout=1)
+        self._listen_for_passive_target(timeout=0.2)
+      
+    def _wakeup(self) -> None:
+        """Send any special commands/data to wake up PN532"""
+        self._uart.write(b"\x55\x55\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+        
+    def firmware_version(self):
+        """Call PN532 GetFirmwareVersion function and return a tuple with the IC,
+        Ver, Rev, and Support values.
+        """
+        response = self._call_function(_COMMAND_GETFIRMWAREVERSION, 4, timeout=1)
+        if response is None:
+            raise RuntimeError("Failed to detect the PN532")
+        return tuple(response)
 
     def _sam_configuration(self) -> None:
         """Configure the PN532 to read MiFare cards."""
