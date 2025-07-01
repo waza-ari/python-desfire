@@ -53,11 +53,11 @@ class PN532UARTDevice(Device):
         logger.info("PN532 initialized, found version {ver}.{rev}.")
         self._sam_configuration()
         self._listen_for_passive_target(timeout=0.2)
-      
+
     def _wakeup(self) -> None:
         """Send any special commands/data to wake up PN532"""
         self._uart.write(b"\x55\x55\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
-        
+
     def firmware_version(self):
         """Call PN532 GetFirmwareVersion function and return a tuple with the IC,
         Ver, Rev, and Support values.
