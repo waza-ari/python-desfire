@@ -11,9 +11,6 @@ except ImportError:
     _has_serial = False
 else:
     _has_serial = True
-import logging
-
-logger = logging.getLogger(__name__)
 
 _PREAMBLE = 0x00
 _STARTCODE1 = 0x00
@@ -49,15 +46,15 @@ class PN532UARTDevice(Device):
 
         self._uart = serial.Serial(port, **kwargs)
         self._wakeup()
-        ic, ver, rev, support = self.firmware_version()
-        logger.info("PN532 initialized, found version {ver}.{rev}.")
+        # read out firmware version, primary purpose is checking if connection was successful
+        self.ic, self.ver, self.rev, self.support = self.firmware_version()
         self._sam_configuration()
-        self._listen_for_passive_target(timeout=0.2)
-
+        self._listen_for_passive_target(timeout=0.5)
+      
     def _wakeup(self) -> None:
-        """Send any special commands/data to wake up PN532"""
+        """Send a special command to wake up PN532"""
         self._uart.write(b"\x55\x55\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
-
+        
     def firmware_version(self):
         """Call PN532 GetFirmwareVersion function and return a tuple with the IC,
         Ver, Rev, and Support values.
