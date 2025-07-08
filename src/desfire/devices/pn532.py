@@ -31,12 +31,13 @@ class PN532UARTDevice(Device):
     Wrapper around a pyserial based connection to a PN532 device.
     """
 
-    def __init__(self, port: str, **kwargs):
+    def __init__(self, port: str, timeout: float = 1, **kwargs):
         """
         Initializes a device connected to a PN532 device over UART.
 
         Args:
             port (str): The port to connect to, e.g. "/dev/ttyS0" or "COM1".
+            timeout (float): The timeout for passive target listening in seconds.
 
         Keyword Args:
             All keyword arguments are passed to the pyserial.Serial constructor.
@@ -49,7 +50,7 @@ class PN532UARTDevice(Device):
         # read out firmware version, primary purpose is checking if connection was successful
         self.ic, self.ver, self.rev, self.support = self.firmware_version()
         self._sam_configuration()
-        self._listen_for_passive_target(timeout=0.5)
+        self._listen_for_passive_target(timeout=timeout)
 
     def _wakeup(self) -> None:
         """Send a special command to wake up PN532"""
