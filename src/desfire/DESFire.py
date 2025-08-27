@@ -1078,9 +1078,9 @@ class DESFire:
             logger.error("Tried to create file without selecting an application")
             raise DESFireException("No application selected, call select_application first")
 
-        if not 0 <= file_settings.file_size <= 0xFF:
-            logger.error("File size must be between 0 and 255 (single byte)")
-            raise DESFireException("File size must be between 0 and 255 (single byte)")
+        if not 0 <= file_settings.file_size <= 0xFFFFFF:
+            logger.error("File size can be maximum of 3 bytes be between 0 and 16777215 (three bytes)")
+            raise DESFireException("File size must be between 0 and 16777215 (three bytes)")
 
         logger.info(
             "Executing command: create_standard_file"
