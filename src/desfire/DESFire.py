@@ -561,7 +561,7 @@ class DESFire:
             DESFireCommunicationMode.CMAC if self.is_authenticated else DESFireCommunicationMode.PLAIN,
         )
         res = KeySettings(
-            application_id=self.last_selected_application or [0x0],
+            application_id=self.last_selected_application or [0x00, 0x00, 0x00],
             key_type=DESFireKeyType(resp[1] & 0xF0),  # Only interested in first 4 bits of the second byte
             max_keys=resp[1] & 0x0F,  # Only interested in last 4 bits of the second byte
             settings=[],
@@ -697,7 +697,10 @@ class DESFire:
         # The type of key can only be changed for the PICC master key
         # Applications must define their key type in create_application()
         key_number = key_id & 0x0F
-        if self.last_selected_application == [0x00] or self.last_selected_application is None:
+        # Changing the master key requires special flags being set.
+        # Therefore, we need to detect whether we're trying to change the PICC master key on application 0x000000
+        # See https://github.com/waza-ari/python-desfire/issues/20 and https://github.com/waza-ari/python-desfire/issues/4
+        if self.last_selected_application is None or self.last_selected_application == [0x00, 0x00, 0x00]:
             key_number = key_number | current_key.key_type.value
             # changing the PICC master key type requires special key_numbers
             if new_key.key_type == DESFireKeyType.DF_KEY_AES:
