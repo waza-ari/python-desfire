@@ -31,7 +31,7 @@ class CardVersion:
 
     def __repr__(self) -> str:
         temp = "--- Desfire Card Details ---\r\n"
-        temp += f"Hardware Version: {self.hardware_minor_version}.{self.hardware_minor_version}\r\n"
+        temp += f"Hardware Version: {self.hardware_major_version}.{self.hardware_minor_version}\r\n"
         temp += f"Software Version: {self.software_major_version}.{self.software_minor_version}\r\n"
         temp += f"EEPROM size:      {1 << (self.hardware_storage_size - 1)} bytes\r\n"
         temp += f"Production:       week {self.production_date_cw:X}, year 20{self.production_date_year:02X}\r\n"
