@@ -50,7 +50,7 @@ Production:       week 28, year 2013
 UID no:           04 4D 70 BA 5F 35 80
 Batch no:         BA 44 97 D6
 
-new code produces output like:
+new code produces following output:
 --- Desfire Card Details ---
 Hardware Version: 1.0
 Software Version: 1.4
