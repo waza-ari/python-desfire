@@ -33,7 +33,33 @@ class CardVersion:
         temp = "--- Desfire Card Details ---\r\n"
         temp += f"Hardware Version: {self.hardware_major_version}.{self.hardware_minor_version}\r\n"
         temp += f"Software Version: {self.software_major_version}.{self.software_minor_version}\r\n"
-        temp += f"EEPROM size:      {1 << (self.hardware_storage_size - 1)} bytes\r\n"
+
+        # EEPROM size calculation according to NXP documentation,
+        # see https://www.nxp.com/docs/en/application-note/AN10833.pdf
+        #     formula is in Figure 1 on page 4, lower right corner of the table,
+        # .    examples are in the table itself, below some card types, e.g. MIFARE DESFire
+        # see also https://www.nxp.com/docs/en/data-sheet/NTAG213_215_216.pdf
+        #     on page 36, Table 28 and notes below
+        #
+        # Meaning and encoding of 'hardware_storage_size':
+        # Bit 0 (LSB) indicates size encoding method
+        # Bit 1..7 are the 'size' value used in the formula below
+        #
+        # Ultralight Family has bit 0 = 1, e.g. 0x0B (for 48 Byte) or 0x0E (128 Byte)
+        # MIFARE DESFire Family has bit 0 = 0, e.g. 0x16: 2K, 0x18: 4K, 0x1A: 8K, 0x1C: 16K, 0x1E: 32K
+        #
+        # Formula:
+        #   if bit 0 = 1, then storageBytes = 2^(size // 2) up to storageBytes = 2^(size // 2 + 1)
+        #   if bit 0 = 0, then storageBytes = 2^(size // 2)
+
+        # LSB indicates size encoding method
+        if (self.hardware_storage_size & 0x01) == 0x01:  # typical for Ultralight C, and EV1
+            temp += (
+                f"EEPROM size:      {1 << (self.hardware_storage_size >> 1)} up to "
+                f"{1 << ((self.hardware_storage_size >> 1) + 1)} bytes\r\n"
+            )
+        else:  # typical for DESFire EV1, EV2, and EV3
+            temp += f"EEPROM size:      {1 << (self.hardware_storage_size >> 1)} bytes\r\n"
         temp += f"Production:       week {self.production_date_cw:X}, year 20{self.production_date_year:02X}\r\n"
         temp += f"UID no:           {to_hex_string(self.uid)}\r\n"
         temp += f"Batch no:         {to_hex_string(self.batch_no)}\r\n"
