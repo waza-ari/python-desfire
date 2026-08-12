@@ -175,3 +175,7 @@ cython_debug/
 
 # Docs site
 public/
+
+# MacOS
+.DS_Store
+**/.DS_Store
